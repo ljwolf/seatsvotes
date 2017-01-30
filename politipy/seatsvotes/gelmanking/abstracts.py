@@ -531,7 +531,9 @@ class SeatsVotes(object):
 
         G_a = (\sum_i^b \min_j^n({v_{ij} | s_{ij} > .5}) / b) - .5
 
-        Where b is a number of simulation batches, n is the number of simulations-per-batch, v_{ij} is the reference paty vote share in batch j for replication i, s_{ij} is the reference party seat share in batch j for replication i.
+        Where b is a number of simulation batches, n is the number of simulations-per-batch, 
+        v_{ij} is the reference paty vote share in batch j for replication i, 
+        s_{ij} is the reference party seat share in batch j for replication i.
         """
         if best_target is None:
             try:
@@ -555,7 +557,7 @@ class SeatsVotes(object):
             agaps.append(candidate - .5)
         return np.percentile(agaps, q=q)
 
-    def get_efficiency_gap(self, t=-1, year=None, names=None):
+    def get_efficiency_gap(self, t=-1, year=None, names=None, use_turnout=True):
         """
         Compute the percentage difference of wasted votes in a given election
 
@@ -568,15 +570,21 @@ class SeatsVotes(object):
         Where V_{ik} is the raw vote cast in district i for party k and m_i is the total number of votes cast for all parties in district i
         """
         turnout, voteshares, a, b, c = self._extract_election(t=t,year=year)
-        return est.efficiency_gap(voteshares*turnout, turnout, names=names).iloc[0,1]
+        if use_turnout:
+            return est.efficiency_gap(voteshares, 
+                                      turnout)
+        else:
+            return est.efficiency_gap(voteshares, turnout=None)
 
     def estimate_efficiency_gap(self, t=-1, year=None, names=None,
                                 Xhyp=None, predict=False, n_sims=1000,
-                                q=[5,50,95]):
+                                q=[5,50,95], use_turnout=True):
         """
         Compute the efficiency gap expectation over many simulated elections. This uses the same estimator as `get_efficiency_gap`, but computes the efficiency gap over many simulated elections.
         """
         turnout, *rest = self._extract_election(t=t, year=year)
+        if not use_turnout:
+            turnout = None
         sims = self.simulate_elections(t=t,  Xhyp=Xhyp, predict=predict, n_sims=n_sims)
         gaps = [est.efficiency_gap(sim.reshape(-1,1), turnout=turnout,
                                    names=names).iloc[0,1]
@@ -637,7 +645,6 @@ class SeatsVotes(object):
                 mod.model.weights = np.delete(mod.model.weights, i)
                 del_models.append(mod)
         rstats = []
-        full_agap = self.get_attainment_gap(t=t)
         full_mbon = self.estimate_median_bonus(t=t, Xhyp=Xhyp)
         full_obon = self.estimate_observed_bonus(t=t, Xhyp=Xhyp)
         full_egap = self.estimate_efficiency_gap(t=t, Xhyp=Xhyp)
@@ -645,16 +652,17 @@ class SeatsVotes(object):
         for idx,mod in enumerate(del_models):
             self.models[t] = mod
             Xhyp_i = np.delete(Xhyp, idx, axis=0) if Xhyp is not None else None
-            agap = self.get_attainment_gap(t=t)
-            obs_egap = self.get_efficiency_gap(t=t)
+            obs_egap_t = self.get_efficiency_gap(t=t)
+            obs_egap_not = self.get_efficiency_gap(t=t, use_turnout=False)
             mbon = self.estimate_median_bonus(t=t, Xhyp=Xhyp_i, n_sims=n_sims)
             obon = self.estimate_observed_bonus(t=t, Xhyp=Xhyp_i, n_sims=n_sims)
             egap = self.estimate_efficiency_gap(t=t, Xhyp=Xhyp_i, n_sims=n_sims)
+            egap_not = self.estimate_efficiency_gap(t=t, Xhyp=Xhyp_i, n_sims=n_sims, use_turnout=False)
             rstats.append(np.hstack((agap, obs_egap, mbon, obon, egap)))
         self.models[t] = original
         rstats = np.vstack(rstats)
-        cols = ( ['AGap_e', 'EGap_e']
-                +['{}_{}'.format(name,ptile) for name in ['MBonus', 'OBonus', 'EGap']
+        cols = ( ['EGap_eT', 'EGap_enoT']
+                +['{}_{}'.format(name,ptile) for name in ['MBonus', 'OBonus', 'EGap_T', 'EGap_noT']
                  for ptile in (5,50,95)] )
         rstats = pd.DataFrame(rstats, columns=cols)
         leverage = pd.DataFrame(np.hstack((np.diag(leverage).reshape(-1,1), 

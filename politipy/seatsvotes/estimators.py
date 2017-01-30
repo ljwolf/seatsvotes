@@ -228,44 +228,52 @@ def pairwise_attainment_gap(obs_turnout, obs_shares, swing_ratios, rule=ut.plura
     biases = np.subtract.outer(extrap, extrap)
     return np.triu(biases), extrap
 
-def directed_waste(district_votes, turnout, names=None):
+def directed_waste(voteshares, turnout=None):
     """
-    Compute the directed waste in votes over districts in a two-party system
+    Compute the directed waste in votes over districts in a two-party system. 
+    Expresses the percentage of all votes wasted for the reference party over and above the other party. 
+    
+    If negative, indicates bias against the reference party, in that more votes are wasted by the reference party than by the opponent.
 
     Arguments
     ----------
-    district_votes      :   np.ndarray (n,p)
-                        vector of raw votes cast for `p` parties in `n` districts. If a two-party system, this may be (n,1), with the remaining opposition votes coming from `turnout - district_votes`
-    turnout             :   np.ndarray (n,1)
-                        vector of raw votes cast for all parties in `n` districts
-    """
-    turnout = np.asarray(turnout).reshape(-1,1)
-    if isinstance(district_votes, (pd.DataFrame)):
-        names = district_votes.columns if names is None else Names
-        district_votes = district_votes.values
-    elif isinstance(district_votes, pd.Series):
-        if names is None:
-            names = (district_votes.name, 'not ' + district_votes.name)
-        district_votes = district_votes.values.reshape(-1,1)
-    N,p = district_votes.shape
-    if ((0 < district_votes) & (district_votes < 1)).all():
-        district_votes = district_votes *  turnout
-    if p == 1:
-        p = 2 #two party info can be passed as one vector
-        district_votes = np.hstack((district_votes, turnout - district_votes))
-    names = np.arange(p) if names is None else names
-    decisive = np.ceil(turnout * (1/p))
-    waste = district_votes - decisive
-    total_waste = []
-    for party_waste in waste.T:
-        this_waste = np.sum(party_waste[party_waste > 0])
-        total_waste.append(this_waste)
-    disparities = np.subtract.outer(total_waste, total_waste)
-    return pd.DataFrame(np.triu(disparities), columns=names, index=names)
+    voteshares  :   np.ndarray (n,1)
+                    Voteshares for the reference party against which the 
+                    measure is computed. 
+    turnout     :   np.ndarray (n,1)
+                    vector of raw votes cast for all parties in `n` districts
+    
+    This is the McGhee (2014) measure of waste, where waste is defined by the 
+    sum of a party's surplus and losing votes. So, waste for one party is:
 
-def efficiency_gap(district_votes, turnout, names=None):
+    Sum  (votes in districts where party voteshare < .5)
+         + ((votes in districts where party voteshare > .5) 
+           - (.5 * turnout in districts where party voteshare > .5))
+    """
+    voteshares = np.asarray(voteshares).reshape(-1,1)
+    if turnout is None:
+        turnout = np.ones_like(voteshares)
+    turnout = np.asarray(turnout).reshape(voteshares.shape)
+    if not ((0 <= voteshares) & (voteshares <= 1)).all():
+        if ((0 <= voteshares) & (voteshares <= 100)).all():
+            voteshares /= 100
+        else:
+            raise Exception('Vote Shares must be between 0 and 1 with no NaN')
+    # waste is 
+    waste_for = ( ((voteshares > .5) * ((voteshares - .5) * turnout))
+                 +((voteshares < .5) * (voteshares * turnout))).sum()
+    waste_against = ( ((voteshares < .5) * ((voteshares - .5) * turnout))
+                     +((voteshares > .5) * (voteshares * turnout))).sum()
+    return waste_against - waste_for
+
+def efficiency_gap(voteshares, turnout=None):
     """
     compute the efficiency gap, which is defined as the directed waste divided by the total votes cast in an election
     """
-    dw = directed_waste(district_votes, turnout, names=names)
-    return dw/np.sum(turnout)
+    if turnout is None:
+        sbar = (voteshares > .5).mean()
+        hbar = voteshares.mean()
+        return (sbar - .5) - 2 * (hbar - .5)
+    else:
+        dw = directed_waste(voteshares, turnout)
+        return dw/np.sum(turnout)
