@@ -3,13 +3,16 @@ import pandas as pd
 import copy
 from warnings import warn as Warn
 import statsmodels.api as sm
+import matplotlib.pyplot as plt
 from . import utils as ut
 from . import fit
 from .. import estimators as est
 from .. import cvtools as cvt
 
 class SeatsVotes(object):
-    def __init__(self, elex_frame, share_col='vote_share',
+    def __init__(self, elex_frame, covariate_cols,
+                 weight_col=None,
+                 share_col='vote_share',
                  years=None, redistrict=None, district_id='district_id',
                  missing='drop', uncontesteds=None):
         """
@@ -47,6 +50,7 @@ class SeatsVotes(object):
                                         censor, these are the percentiles to censor at. For shift, 
                                         these are the percentiles to move the uncontesteds to.
         """
+        elex_frame = elex_frame.copy(deep=True)
         if uncontesteds is None:
             uncontesteds = dict()
         unc_method = uncontesteds.get('method', 'shift')
@@ -55,54 +59,45 @@ class SeatsVotes(object):
         unc_params = uncontesteds.get('params', dict())
         shares = elex_frame[[share_col]]
         self._share_col = share_col
+        self._covariate_cols = covariate_cols
         if years is None:
-            Warn('checking election dataframe for `year` variable')
+            Warn('checking election dataframe for `year` variable', 
+                 stacklevel=1)
             years = elex_frame['year']
         unique_years = np.sort(np.unique(years))
         self._years = unique_years
         if redistrict is None:
-            Warn('No redistricting vector or rule provided. Using census-based redistricting')
-            redist = ut.census_redistricting(years)
-
+            Warn('No redistricting vector or rule provided. '
+                 'Using census-based redistricting', stacklevel=1)
+            redistrict = ut.census_redistricting(years)
         if unc_threshold < .5:
-            Warn('Threshold is an upper, not lower bound. Converting to upper bound.')
             unc_threshold = 1 - unc_threshold
         self.N = elex_frame.shape[0]
-        self.n_parties = 2
         uncvec = -1*((elex_frame.vote_share < (1 - unc_threshold)).astype(int))
         uncvec += (elex_frame.vote_share > unc_threshold).astype(int)
         if unc_variate.lower().startswith('ord'):
             elex_frame['uncontested'] = uncvec
+            self._covariate_cols.append('uncontested') 
         elif unc_variate.lower().startswith('cat'):
             uncframe = pd.get_dummies(uncvec)
             uncframe.columns = ['UNC_R', 'Contested', 'UNC_D']
             elex_frame = pd.concat((elex_frame, uncframe), axis=1)
-        elex_frame = _prefit(elex_frame, missing=missing,
+            self._covariate_cols.extend(uncframe.columns.tolist())
+        elif unc_variate is None:
+            pass
+        self._uncontested_threshold = unc_threshold
+        self._redist = redistrict
+        elex_frame = self._prefit(elex_frame, 
+                             missing=missing,
                              uncontested=unc_method, **unc_params)
         self._designs = ut.make_designs(elex_frame, years=years,
                                         redistrict=redistrict, 
                                         district_id=district_id)
-        self._uncontested_threshold = unc_threshold
-
-    def fit(self,covariate_cols,
-                 share_col = None,
-                 weight_col = None, inplace=True):
-        """
-        covariate_cols  :   columns of the original `elex_frame` to use in the
-                            model as covariates
-        share_col       :   outcome covariate, name of column containing the vote shares
-                            in the original `elex_frame`
-        weight_col      :   column containing the weights for the weighted least squares
-        """
-        if share_col is None:
-            share_col = self._share_col
         self.p = len(covariate_cols)
-        covariate_cols.extend(['uncontested'])
-        self._covariate_cols = covariate_cols
 
         models= fit.models(self._designs, share_col=share_col,
-                                                  covariate_cols = covariate_cols,
-                                                  weight_col = weight_col)
+                           covariate_cols = covariate_cols,
+                           weight_col = weight_col)
         self.models = models
         self._lambdas = [model.params.get('vote_share__prev', np.nan)
                          for model in models]
@@ -110,8 +105,6 @@ class SeatsVotes(object):
         self._sigma2s = np.asarray([model.scale for model in self.models])
         self._sigma2s[np.isinf(self._sigma2s)] = np.nan
         self._sigma2 = np.nanmean(self._sigma2s)
-        if not inplace:
-            return copy.deepcopy(self)
 
     @property
     def data(self):
@@ -480,7 +473,8 @@ class SeatsVotes(object):
             t = self._years.tolist().index(year)
         turnout, votes, observed_pvs, *rest = self._extract_election(t=t)
         observed_ref_share = observed_pvs[0]
-        return self.estimate_winners_bonus(n_sims=n_sims, target_v = observed_ref_share,
+        return self.estimate_winners_bonus(n_sims=n_sims, 
+                                           target_v = observed_ref_share,
                                            t=t, Xhyp=Xhyp, predict=predict, q=q)
 
     def estimate_winners_bonus(self, n_sims=1000, t=-1, year = None,
@@ -557,7 +551,7 @@ class SeatsVotes(object):
             agaps.append(candidate - .5)
         return np.percentile(agaps, q=q)
 
-    def get_efficiency_gap(self, t=-1, year=None, names=None, use_turnout=True):
+    def get_efficiency_gap(self, t=-1, year=None, use_turnout=True):
         """
         Compute the percentage difference of wasted votes in a given election
 
@@ -571,12 +565,12 @@ class SeatsVotes(object):
         """
         turnout, voteshares, a, b, c = self._extract_election(t=t,year=year)
         if use_turnout:
-            return est.efficiency_gap(voteshares, 
+            return est.efficiency_gap(voteshares[:,0], 
                                       turnout)
         else:
-            return est.efficiency_gap(voteshares, turnout=None)
+            return est.efficiency_gap(voteshares[:,0], turnout=None)
 
-    def estimate_efficiency_gap(self, t=-1, year=None, names=None,
+    def estimate_efficiency_gap(self, t=-1, year=None, 
                                 Xhyp=None, predict=False, n_sims=1000,
                                 q=[5,50,95], use_turnout=True):
         """
@@ -586,10 +580,75 @@ class SeatsVotes(object):
         if not use_turnout:
             turnout = None
         sims = self.simulate_elections(t=t,  Xhyp=Xhyp, predict=predict, n_sims=n_sims)
-        gaps = [est.efficiency_gap(sim.reshape(-1,1), turnout=turnout,
-                                   names=names).iloc[0,1]
+        gaps = [est.efficiency_gap(sim.reshape(-1,1), turnout=turnout)
                 for sim in sims]
         return np.percentile(gaps, q=q)
+
+    def plot_rankvote(self, t=-1, year= None, normalize=False, mean_center=False,
+                      ax=None, fig_kw = dict(), scatter_kw=dict(c='k')): 
+        """
+        Plot the rankvote curve for the given time period. 
+
+        Arguments
+        ---------
+        t   :   int
+                time index
+        year:   int
+                year to plot. Overrides t
+        normalize   :   bool
+                        flag denoting whether to normalize ranks to [0,1]
+        mean_center :   bool
+                        flag denoting whether to center the rankvote to the 
+                        party vote share. If both normalize and mean_center, 
+                        the plot is actually the seats-votes curve.
+        ax          :   matplotlib.AxesSubPlot
+                        an axis to plot the data on. If None, will create a new
+                        figure.
+        fig_kw      :   dict
+                        keyword arguments for the plt.figure() call, if applicable.
+        scatter_kw  :   dict
+                        keyword arguments for the ax.scatter call, if applicable.
+
+        Returns
+        -------
+        figure and axis of the rank vote plot
+        """
+        from scipy.stats import rankdata 
+        turnout, vshares, pvshares, *rest = self._extract_election(t=t, year=year)
+        vshares = vshares[:,0]
+        if ax is None:
+            f = plt.figure(**fig_kw)
+            ax = plt.gca()
+        else:
+            f = plt.gcf()
+        ranks = rankdata(1-vshares)
+        if normalize:
+            ranks /= len(ranks)
+        if mean_center:
+            plotshares = 1 - vshares - (.5 - pvshares[0])
+        else:
+            plotshares = 1 - vshares
+        ax.scatter(plotshares, ranks, **scatter_kw)
+        if normalize and mean_center:
+            title = 'Seats-Votes Curve ({})'
+        elif normalize:
+            title = 'Normalized Rank-Votes Curve ({})'
+        elif mean_center:
+            title = 'Centered Rank-Votes Curve ({})'
+        else:
+            title = 'Rank-Votes Curve ({})'
+        if year is None:
+            year = self._years[t]
+        ax.set_title(title.format(year))
+        return f,ax
+
+    def plot_empirical_seatsvotes(self, *args, **kwargs):
+        """
+        This is plot_rankvote with normalize and mean_center forced to be true.
+        """
+        kwargs['normalize'] = True
+        kwargs['mean_center'] = True
+        return self.plot_rankvote(*args, **kwargs)
 
     def _extract_election(self, t=-1, year=None):
         """
@@ -636,7 +695,8 @@ class SeatsVotes(object):
         del_models = cvt.jackknife(original, full=True, **jackknife_kw)
         del_params = pd.DataFrame(np.vstack([d.params.reshape(1,-1) for d in del_models]),
                                   columns=original.params.index)
-        if not reestimate:
+
+        if not reestimate: #Then build the deleted models from copies of the original
             mods = (copy.deepcopy(original) for _ in range(int(original.nobs)))
             del_models = []
             for i,mod in enumerate(mods):
@@ -645,62 +705,85 @@ class SeatsVotes(object):
                 mod.model.weights = np.delete(mod.model.weights, i)
                 del_models.append(mod)
         rstats = []
+
+        # First, estimate full-map statistics
         full_mbon = self.estimate_median_bonus(t=t, Xhyp=Xhyp)
         full_obon = self.estimate_observed_bonus(t=t, Xhyp=Xhyp)
-        full_egap = self.estimate_efficiency_gap(t=t, Xhyp=Xhyp)
-        full_obs_egap = self.get_efficiency_gap(t=t)
+        full_egap_T = self.estimate_efficiency_gap(t=t, Xhyp=Xhyp, use_turnout=True)
+        full_egap_noT = self.estimate_efficiency_gap(t=t, Xhyp=Xhyp, use_turnout=False)
+        full_obs_egap_T = self.get_efficiency_gap(t=t, use_turnout=True)
+        full_obs_egap_noT = self.get_efficiency_gap(t=t, use_turnout=False)
+
+        # Then, iterate through the deleted models and compute 
+        # district sensivities in the target year (t). 
         for idx,mod in enumerate(del_models):
             self.models[t] = mod
+            # make sure the hypothetical gets deleted as well
             Xhyp_i = np.delete(Xhyp, idx, axis=0) if Xhyp is not None else None
+            
+            # Compute various bias measures:
+            # the observed efficiency gap (with/without turnout)
             obs_egap_t = self.get_efficiency_gap(t=t)
             obs_egap_not = self.get_efficiency_gap(t=t, use_turnout=False)
-            mbon = self.estimate_median_bonus(t=t, Xhyp=Xhyp_i, n_sims=n_sims)
-            obon = self.estimate_observed_bonus(t=t, Xhyp=Xhyp_i, n_sims=n_sims)
-            egap = self.estimate_efficiency_gap(t=t, Xhyp=Xhyp_i, n_sims=n_sims)
-            egap_not = self.estimate_efficiency_gap(t=t, Xhyp=Xhyp_i, n_sims=n_sims, use_turnout=False)
-            rstats.append(np.hstack((agap, obs_egap, mbon, obon, egap)))
+
+            # The median bonus
+            mbon = self.estimate_median_bonus(t=t, Xhyp=Xhyp_i, 
+                                              n_sims=n_sims)
+            # The observed bonus
+            obon = self.estimate_observed_bonus(t=t, Xhyp=Xhyp_i, 
+                                                n_sims=n_sims)
+
+            # The estimated (simulated) efficiency gap (with/without turnout)
+            egap_T = self.estimate_efficiency_gap(t=t, Xhyp=Xhyp_i, 
+                                                  n_sims=n_sims, 
+                                                  use_turnout=True)
+            egap_noT = self.estimate_efficiency_gap(t=t, Xhyp=Xhyp_i, 
+                                                    n_sims=n_sims,
+                                                    use_turnout=False)
+            rstats.append(np.hstack((obs_egap_t, obs_egap_not, 
+                                     mbon, obon, egap_T, egap_noT)))
+        # Reset the model for the time period back to the original model
         self.models[t] = original
+
+        # prepare to ship everything by building columns & dataframe
         rstats = np.vstack(rstats)
         cols = ( ['EGap_eT', 'EGap_enoT']
-                +['{}_{}'.format(name,ptile) for name in ['MBonus', 'OBonus', 'EGap_T', 'EGap_noT']
-                 for ptile in (5,50,95)] )
+                + ['{}_{}'.format(name,ptile) 
+                    for name in ['MBonus', 'OBonus', 'EGap_T', 'EGap_noT']
+                    for ptile in (5,50,95)] )
         rstats = pd.DataFrame(rstats, columns=cols)
+
+        # and the leverage
         leverage = pd.DataFrame(np.hstack((np.diag(leverage).reshape(-1,1), 
                                            resid)),           
                                 columns=['leverage', 'residual'])
         dnames = self._designs[t].district_id
-        full_biases = pd.Series(np.hstack((full_agap, full_obs_egap,
-                                           full_mbon, full_obon, full_egap))).to_frame().T
+
+        # and the statewide estimates
+        full_biases = pd.Series(np.hstack((full_obs_egap_T, full_obs_egap_noT,
+                                           full_mbon, full_obon, 
+                                           full_egap_T, full_egap_noT))).to_frame().T
         full_biases.columns = cols
         full_ests = pd.concat((self.models[t].params.to_frame().T, full_biases), axis=1)
         full_ests['district_id'] = 'statewide'
-        return pd.concat((full_ests, pd.concat((dnames, del_params, leverage, rstats), axis=1)))
+        return pd.concat((full_ests, # stack statewide on top of  
+                          pd.concat((dnames, del_params, #district-levels
+                                     leverage, rstats), axis=1)))
 
-def _prefit(design, covariate_cols=[],
-            missing='drop', uncontested='judgeit',
-            **uncontested_params):
-    """
-    This should
-    1. remove cases where data is missing, both response and in the design
-    2. resolve the uncontested elections where voteshares fall above or below a given threshold.
-    """
-    if missing.lower().startswith('drop'):
-        design.dropna(subset=[['vote_share'] + covariate_cols], inplace=True)
-    else:
-        raise Exception('missing option {} not recognized'.format(missing))
-    design = _unc_dispatch[uncontested.lower()](design, **uncontested_params)
-    return design
-
-##################################
-# Parallel Attainment Gap Sims   #
-##################################
-
-def _agap(model, target_v, t, predict, Xhyp, n_sims):
-    batch = model.simulate_elections(target_v = target_v, t=t, predict=predict,
-                                     Xhyp=Xhyp, n_sims=n_sims)
-    majorities = np.asarray([((sim > .5).mean() > .5) for sim in batch])
-    candidate = batch[majorities].mean(axis=1).min()
-    return candidate
+    def _prefit(self, design,
+                missing='drop', uncontested='judgeit',
+                **uncontested_params):
+        """
+        This should
+        1. remove cases where data is missing, both response and in the design
+        2. resolve the uncontested elections where voteshares fall above or below a given threshold.
+        """
+        if missing.lower().startswith('drop'):
+            design.dropna(subset=[['vote_share'] + self._covariate_cols], inplace=True)
+        else:
+            raise Exception('missing option {} not recognized'.format(missing))
+        design = _unc_dispatch[uncontested.lower()](design, **uncontested_params)
+        return design
 
 ###################################
 # Dispatch Table for Uncontesteds #
@@ -724,7 +807,7 @@ def _shift_unc(design, lower=.05, upper=.95, lower_to=.25, upper_to=.75):
     design.ix[uppers, 'vote_share'] = upper_to
     return design
 
-def _winsor_unc(design, lower=.25, upper=.25):
+def _winsor_unc(design, lower=.25, upper=.75):
     """
     This winsorizes vote shares to a given percentile.
     """
@@ -733,8 +816,12 @@ def _winsor_unc(design, lower=.25, upper=.25):
     except ImportError:
         Warn('Cannot import scipy.stats.mstats.winsorize, censoring instead.',
                 stacklevel=2)
-        return _censor_unc(shares, lower=limit, upper=1-limit)
-    design['vote_share'] = np.asarray(winsorize(design.vote_share, limit=limit))
+        return _censor_unc(shares, lower=lower, upper=1-upper)
+    # WARNING: the winsorize function here is a little counterintuitive in that
+    #          it requires the upper limit to be stated as "from the right,"
+    #          so it should be less than .5, just like "lower"
+    design['vote_share'] = np.asarray(winsorize(design.vote_share, 
+                                                limits=(lower, 1-upper)))
     return design
 
 def _drop_unc(design, lower=.05, upper=.95):
