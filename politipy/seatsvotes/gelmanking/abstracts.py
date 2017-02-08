@@ -140,7 +140,7 @@ class SeatsVotes(object):
         predict     :   bool
                         whether or not to use the predictive distribution or counterfactual distribution
         """
-        t = self._years.index(year) if year is not None else t
+        t = self._years.tolist().index(year) if year is not None else t
         if swing is not None and target_v is not None:
             raise ValueError('either swing or target_v, not both.')
         if predict:
@@ -631,7 +631,7 @@ class SeatsVotes(object):
         if normalize:
             ranks /= len(ranks)
         if mean_center:
-            plotshares = 1 - vshares - (.5 - pvshares[0])
+            plotshares = (1 - vshares) + (pvshares[0] - .5)
         else:
             plotshares = 1 - vshares
         ax.scatter(plotshares, ranks, **scatter_kw)
@@ -661,7 +661,10 @@ class SeatsVotes(object):
                                   ax=None, fig_kw=dict(),
                                   scatter_kw=dict(),
                                   mean_center=True, normalize=True, 
-                                  silhouette = True, q=[5,50,95], env_kw=dict(), median_kw=dict()):
+                                  silhouette = True, 
+                                  q=[5,50,95], 
+                                  env_kw=dict(), median_kw=dict(),
+                                  return_sims = False):
         if target_v is None:
             target_v = self._extract_election(t=t, year=year)[2][0] #democrat party vote share in t/year
         sims = self.simulate_elections(t=t, year=year, n_sims=n_sims, swing=swing, 
@@ -675,7 +678,7 @@ class SeatsVotes(object):
         else:
             f = plt.gcf()
 
-        shift = (.5 - target_v) if mean_center else 0
+        shift = (target_v - .5) if mean_center else 0
         rescale = N if normalize else 1
 
         if silhouette:
@@ -698,16 +701,18 @@ class SeatsVotes(object):
             scatter_kw['linewidth'] = scatter_kw.get('linewidth', 0)
             scatter_kw['marker'] = scatter_kw.get('marker', 'o')
         for sim, rank in zip(sims, ranks):
-            ax.scatter(1-sim+shift, rank/rescale, **scatter_kw)
+            ax.scatter((1-sim)+shift, rank/rescale, **scatter_kw)
         if silhouette:
             env_kw['linestyle'] = env_kw.get('linestyle', '-')
             env_kw['color'] = env_kw.get('color', '#FD0E35')
             env_kw['linewidth'] = env_kw.get('linewidth', 1)
             median_kw['linestyle'] = median_kw.get('linestyle', '-')
             median_kw['color'] = median_kw.get('color', '#FD0E35')
-            ax.plot(1-lo+shift, np.arange(1, N+1)/rescale, **env_kw)
-            ax.plot(1-med+shift, np.arange(1, N+1)/rescale, **median_kw)
-            ax.plot(1-hi+shift, np.arange(1, N+1)/rescale, **env_kw)
+            ax.plot((1-lo)+shift, np.arange(1, N+1)/rescale, **env_kw)
+            ax.plot((1-med)+shift, np.arange(1, N+1)/rescale, **median_kw)
+            ax.plot((1-hi)+shift, np.arange(1, N+1)/rescale, **env_kw)
+        if return_sims:
+            return f,ax, sims, ranks
         return f,ax
 
     def _extract_election(self, t=-1, year=None):
