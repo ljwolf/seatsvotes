@@ -11,8 +11,9 @@ from . import utils as ut
 from . import fit
 from .. import estimators as est
 from .. import cvtools as cvt
+from ..mixins import Preprocessor
 
-class SeatsVotes(object):
+class SeatsVotes(Preprocessor):
     def __init__(self, elex_frame, covariate_cols,
                  weight_col=None,
                  share_col='vote_share',
@@ -53,55 +54,14 @@ class SeatsVotes(object):
                                         censor, these are the percentiles to censor at. For shift, 
                                         these are the percentiles to move the uncontesteds to.
         """
-        elex_frame = elex_frame.copy(deep=True)
-        if uncontesteds is None:
-            uncontesteds = dict()
-        unc_method = uncontesteds.get('method', 'shift')
-        unc_threshold = uncontesteds.get('threshold', .95)
-        unc_variate = uncontesteds.get('variate', 'ordinal')
-        unc_params = uncontesteds.get('params', dict())
-        shares = elex_frame[[share_col]]
-        self._share_col = share_col
-        self._covariate_cols = covariate_cols
-        if years is None:
-            Warn('checking election dataframe for `year` variable', 
-                 stacklevel=1)
-            years = elex_frame['year']
-        unique_years = np.sort(np.unique(years))
-        self._years = unique_years
-        if redistrict is None:
-            Warn('No redistricting vector or rule provided. '
-                 'Using census-based redistricting', stacklevel=1)
-            redistrict = ut.census_redistricting(years)
-        if unc_threshold < .5:
-            unc_threshold = 1 - unc_threshold
-        self.N = elex_frame.shape[0]
-        uncvec = -1*((elex_frame.vote_share < (1 - unc_threshold)).astype(int))
-        uncvec += (elex_frame.vote_share > unc_threshold).astype(int)
-        if unc_variate.lower().startswith('ord'):
-            elex_frame['uncontested'] = uncvec
-            self._covariate_cols.append('uncontested') 
-        elif unc_variate.lower().startswith('cat'):
-            uncframe = pd.get_dummies(uncvec)
-            uncframe.columns = ['UNC_R', 'Contested', 'UNC_D']
-            elex_frame = pd.concat((elex_frame, uncframe), axis=1)
-            self._covariate_cols.extend(uncframe.columns.tolist())
-        elif unc_variate is None:
-            pass
-        self._uncontested_threshold = unc_threshold
-        self._redist = redistrict
-        elex_frame = self._prefit(elex_frame, 
-                             missing=missing,
-                             uncontested=unc_method, **unc_params)
-        self._designs = ut.make_designs(elex_frame, years=years,
-                                        redistrict=redistrict, 
-                                        district_id=district_id)
-        self.p = len(covariate_cols)
-
-        models= fit.models(self._designs, share_col=share_col,
-                           covariate_cols = covariate_cols,
-                           weight_col = weight_col)
-        self.models = models
+        Preprocessor.__init__(self, elex_frame, 
+                              covariate_cols, weight_col=weight_col, share_col='vote_share',
+                              years=None, redistrict=None, district_id='district_id', 
+                              missing='drop', uncontesteds=None)
+        self.p = len(self._covariate_cols)
+        self.models = fit.models(self._designs, share_col=share_col,
+                                 covariate_cols = covariate_cols,
+                                 weight_col = weight_col)
         self._lambdas = [model.params.get('vote_share__prev', np.nan)
                          for model in models]
         self._lambda = np.nanmean(self._lambdas)
@@ -109,9 +69,52 @@ class SeatsVotes(object):
         self._sigma2s[np.isinf(self._sigma2s)] = np.nan
         self._sigma2 = np.nanmean(self._sigma2s)
 
+    ##############
+    # Properties #
+    ##############
+
+    @property
+    def _designs(self):
+        return self.wide
+    
+    @property
+    def p(self):
+        return len(self._covariate_cols)
+
+    @property
+    def N(self):
+        return self.long.shape[0]
+
+    @property
+    def Nt(self):
+        return len(self.long)
+
+    @property
+    def years(self):
+        return self._years
+
     @property
     def data(self):
         return pd.concat(self._designs, ignore_index=True)
+    
+    @property
+    def params(self):
+        """
+        All of the parameters across all models
+        """
+        unite = pd.concat([model.params for model in self.models], axis=1)
+        unite.columns = self._years
+        return unite
+    
+    def get_modelattr(self, *attrs, years=None):
+        """
+        Create a dataframe of properties from the underlying models
+        """
+        candidate = pd.concat([pd.DataFrame([getattr(model, attr) for attr in attrs], columns=attrs)
+                               for model in self.models],
+                              axis=0)
+        candidate.index = self._years.tolist()
+        return candidate
 
     def simulate_elections(self, n_sims=10000, swing=None, Xhyp=None,
                            target_v=None, fix=False, t=-1, year=None,
@@ -397,15 +400,6 @@ class SeatsVotes(object):
         self._use_sim_swing = use_sim_swing
 
         return swing_at_observed[0] if use_sim_swing else swing_lm
-
-    @property
-    def params(self):
-        """
-        All of the parameters across all models
-        """
-        unite = pd.concat([model.params for model in self.models], axis=1)
-        unite.columns = self._years
-        return unite
 
     @property
     def swing_ratios(self):
