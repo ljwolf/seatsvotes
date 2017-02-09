@@ -58,7 +58,7 @@ class Preprocessor(object):
                  share_column='vote_share', 
                  covariates = None,
                  weight_column=None,
-                 year_column = None,
+                 year_column = 'year',
                  redistrict_column = None,
                  district_id = 'district_id',
                  missing = 'drop', 
@@ -77,6 +77,8 @@ class Preprocessor(object):
         self._year_column =year_column
         self._redistrict_column = redistrict_column
         self._district_id_column = district_id
+        self._weight_column = weight_column
+        self.elex_frame.rename(columns=dict(vote_share=share_column), inplace=True)
 
         if uncontested is None:
             uncontested = dict(method='censor')
@@ -85,6 +87,7 @@ class Preprocessor(object):
         if uncontested['method'].lower().startswith('imp'):
             uncontested['covariates'] = self._covariate_cols
         print(uncontested)
+        self._resolve_missing(method=missing)
         self._resolve_uncontested(**uncontested)
         if uncontested.get('ordinal', True):
             if uncontested['method'].lower() != 'drop':
@@ -98,12 +101,26 @@ class Preprocessor(object):
             self.elex_frame.drop('uncontested', axis=1, inplace=True)
             if uncontested['method'].lower() != 'drop':
                 self._covariate_cols.extend(dummies.columns.tolist()) 
+
+
+        if year_column is not None:
+            try:
+                self.elex_frame[self._year_column]
+            except KeyError:
+                raise KeyError("The provided year column is not found in the dataframe."
+                               " Provided: {}".format(self._year_column))
+        if redistrict_column is not None:
+            try:
+                self.elex_frame[self._redistrict_column]
+            except KeyError:
+                raise KeyError("The provided year column is not found in the dataframe."
+                               "\n\tProvided: {}".format(self._redistrict_column))
         
         self.wide = gkutil.make_designs(self.elex_frame,
-                            years=self.elex_frame.get(self._year_column),
-                            redistrict=self.elex_frame.get(self._redistrict_column),
+                            years=self.elex_frame[self._year_column] if self._year_column is not None else None,
+                            redistrict=self.elex_frame[self._redistrict_column] if self._redistrict_column is not None else None,
                             district_id=self._district_id_column)
-        self.long = pd.concat(self.wide, axis=1)
+        self.long = pd.concat(self.wide, axis=0)
 
     def _resolve_missing(self, method='drop'):
         if (method.lower() == 'drop'):
@@ -134,20 +151,21 @@ class Preprocessor(object):
                                 "years were provided in the input "
                                 "dataframe. Provide a year variate "
                                 "in the input dataframe to fix")
+            special['weight_column'] = special.get('weight_column', self._weight_column)
         else:
             raise KeyError("Uncontested method not understood."
                             "\n\tRecieved: {}"
                             "\n\tSupported: 'censor', 'winsor', "
                             "'shift', 'drop', 'impute',"
                             " 'impute_recursive'".format(method))
-        if self.elex_frame.vote_share.isnull().any():
-            raise self._GIGO("There exists a null vote share with full "
-                            "covariate information. In order to impute,"
-                            "the occupancy of the seat should be known. "
-                            "Go through the data and assign records with "
-                            "unknown vote share a 0 if the seat was "
-                            "awarded to the opposition and 1 if the seat "
-                            "was awarded to the reference party to fix.")
+        #if self.elex_frame.vote_share.isnull().any():
+        #    raise self._GIGO("There exists a null vote share with full "
+        #                    "covariate information. In order to impute,"
+        #                    "the occupancy of the seat should be known. "
+        #                    "Go through the data and assign records with "
+        #                    "unknown vote share a 0 if the seat was "
+        #                    "awarded to the opposition and 1 if the seat "
+        #                    "was awarded to the reference party to fix.")
 
         if method.lower() == 'impute_recursive':
             wide = gkutil.make_designs(self.elex_frame,
@@ -222,7 +240,8 @@ def _drop_unc(design, floor=.05, ceil=.95):
     mask = (design.vote_share < floor) + (design.vote_share > (ceil))
     return design[~mask]
 
-def _impute_unc(design, covariates, floor=.25, ceil=.75, fit_params=dict()):
+def _impute_unc(design, covariates, weight_column=None, 
+                floor=.25, ceil=.75, fit_params=dict()):
     """
     This imputes the uncontested seats according 
     to the covariates supplied for the model. Notably, this does not
@@ -240,12 +259,13 @@ def _impute_unc(design, covariates, floor=.25, ceil=.75, fit_params=dict()):
     imputed = []
     for yr,contest in design.groupby("year"):
         mask = (contest.vote_share < floor) | (contest.vote_share > (ceil))
+        mask |= contest.vote_share.isnull()
         contested = contest[~mask]
         uncontested = contest[mask]
         unc_ix = uncontested.index
         imputor = sm.WLS(contested.vote_share, 
                          sm.add_constant(contested[covariates]),
-                         weights=contested.turnout).fit(**fit_params)
+                         weights=contested.get(weight_column, [1]*len(contested.vote_share))).fit(**fit_params)
         contest.ix[unc_ix, 'vote_share'] = imputor.predict(
                                                            sm.add_constant(
                                                            uncontested[covariates],
