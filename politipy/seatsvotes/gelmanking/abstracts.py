@@ -2,8 +2,6 @@ from __future__ import division
 import copy
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-import statsmodels.api as sm
 from warnings import warn as Warn
 from scipy.stats import rankdata
 from collections import OrderedDict
@@ -11,14 +9,14 @@ from . import utils as ut
 from . import fit
 from .. import estimators as est
 from .. import cvtools as cvt
-from ..mixins import Preprocessor
+from ..mixins import Preprocessor, Plotter
 
-class SeatsVotes(Preprocessor):
-    def __init__(self, elex_frame, covariate_cols,
-                 weight_col=None,
-                 share_col='vote_share',
-                 years=None, redistrict=None, district_id='district_id',
-                 missing='drop', uncontesteds=None):
+class SeatsVotes(Preprocessor, Plotter):
+    def __init__(self, elex_frame, covariate_columns,
+                 weight_column=None,
+                 share_column='vote_share',
+                 year_column='year', redistrict_column=None, district_id='district_id',
+                 missing='drop', uncontested=None):
         """
         Construct a Seats-Votes object for a given election. let ni contests in T time periods occur, 
         so that there are sum(ni)=N contests overall. 
@@ -54,18 +52,23 @@ class SeatsVotes(Preprocessor):
                                         censor, these are the percentiles to censor at. For shift, 
                                         these are the percentiles to move the uncontesteds to.
         """
-        Preprocessor.__init__(self, elex_frame, 
-                              covariate_cols, weight_col=weight_col, share_col='vote_share',
-                              years=None, redistrict=None, district_id='district_id', 
-                              missing='drop', uncontesteds=None)
-        self.p = len(self._covariate_cols)
-        self.models = fit.models(self._designs, share_col=share_col,
-                                 covariate_cols = covariate_cols,
-                                 weight_col = weight_col)
+        super().__init__(elex_frame, 
+                              covariates = covariate_columns, 
+                              weight_column=weight_column, share_column='vote_share',
+                              year_column=year_column,
+                              redistrict_column = redistrict_column, district_id='district_id', 
+                              missing='drop', uncontested=None)
+        self._years = np.sort(self.long[self._year_column].unique())
+        assert all([elex[self._year_column].unique() == year 
+                    for year,elex in zip(self.years, self.wide)]), "Years mismatch with designs in object.wide"
+        self.models = fit.models(self._designs, share_col='vote_share',
+                                 covariate_cols = self._covariate_cols,
+                                 weight_col = weight_column)
         self._lambdas = [model.params.get('vote_share__prev', np.nan)
-                         for model in models]
+                         for model in self.models]
         self._lambda = np.nanmean(self._lambdas)
-        self._sigma2s = np.asarray([model.scale for model in self.models])
+        #self._sigma2s = np.asarray([model.scale for model in self.models])
+        self._sigma2s = self.get_modelattr('scale').values
         self._sigma2s[np.isinf(self._sigma2s)] = np.nan
         self._sigma2 = np.nanmean(self._sigma2s)
 
@@ -103,7 +106,7 @@ class SeatsVotes(Preprocessor):
         All of the parameters across all models
         """
         unite = pd.concat([model.params for model in self.models], axis=1)
-        unite.columns = self._years
+        unite.columns = self.years
         return unite
     
     def get_modelattr(self, *attrs, years=None):
@@ -113,7 +116,7 @@ class SeatsVotes(Preprocessor):
         candidate = pd.concat([pd.DataFrame([getattr(model, attr) for attr in attrs], columns=attrs)
                                for model in self.models],
                               axis=0)
-        candidate.index = self._years.tolist()
+        candidate.index = self.years.tolist()
         return candidate
 
     def simulate_elections(self, n_sims=10000, swing=None, Xhyp=None,
@@ -137,13 +140,13 @@ class SeatsVotes(Preprocessor):
         fix         :   bool
                         flag to denote whether each simulation is pegged exactly to `target_v`, or if it's only the average of all simulations pegged to this value.
         t           :   int
-                        the target time offset to use for the counterfactual simulations. Overrides year.
+                        the target time offset to use for the counterfactual simulations. Overridden by year.
         year        :   int
                         the target year to use for the counterfactual simulations
         predict     :   bool
                         whether or not to use the predictive distribution or counterfactual distribution
         """
-        t = self._years.tolist().index(year) if year is not None else t
+        t = self.years.tolist().index(year) if year is not None else t
         if swing is not None and target_v is not None:
             raise ValueError('either swing or target_v, not both.')
         if predict:
@@ -228,11 +231,11 @@ class SeatsVotes(Preprocessor):
         fix         :   bool
                         flag to denote whether each simulation is pegged exactly to `target_v`, or if it's only the average of all simulations pegged to this value.
         """
-        if t in self._years:
+        if t in self.years:
             year = t
-            t = self._years.tolist().index(t)
+            t = self.years.tolist().index(t)
         else:
-            year = self._years[t]
+            year = self.years[t]
         vt = self.models[t].model.endog.reshape(-1,1)
         X = self.models[t].model.exog
         if Xhyp is None:
@@ -248,7 +251,7 @@ class SeatsVotes(Preprocessor):
         """
         Draw directly from the posterior in Gelman and King 1994, equation 7.
         """
-        t = self._years.tolist().index(year)
+        t = self.years.tolist().index(year)
         betas = np.asarray(self.models[t].params).reshape(-1,1)
         lam = self._lambda
         sig2 = self._sigma2
@@ -453,7 +456,7 @@ class SeatsVotes(Preprocessor):
         where s is the seat share won by the reference party and v is the average vote share won by the reference party.
         """
         if year is not None:
-            t = self._years.tolist().index(year)
+            t = self.years.tolist().index(year)
         sims = self.simulate_elections(n_sims=n_sims, t=t, Xhyp=Xhyp, predict=predict,
                                        target_v=.5, fix=True)
         weights = 1/self.models[t].model.weights
@@ -470,7 +473,7 @@ class SeatsVotes(Preprocessor):
         where s is the seat share won by the reference party and v_{obs} is the observed share of the vote won by the reference party. This reduces to the difference in peformance between the reference party and the opponent when the opponent does as well as the reference.
         """
         if year is not None:
-            t = self._years.tolist().index(year)
+            t = self.years.tolist().index(year)
         turnout, votes, observed_pvs, *rest = self._extract_election(t=t)
         observed_ref_share = observed_pvs[0]
         return self.estimate_winners_bonus(n_sims=n_sims, 
@@ -487,7 +490,7 @@ class SeatsVotes(Preprocessor):
         where s is the seat share won by the reference party and v_i is an arbitrary target vote share. This reduces to a difference in performance between the reference party and the opponent when the opponent and the reference win `target_v` share of the vote.
         """
         if year is not None:
-            t = self._years.tolist().index(year)
+            t = self.years.tolist().index(year)
         sims = self.simulate_elections(n_sims=n_sims, t=t, Xhyp=Xhyp, predict=predict,
                                    target_v = target_v, fix=True)
         complement = self.simulate_elections(n_sims=n_sims, t=t, Xhyp=Xhyp,
@@ -510,7 +513,7 @@ class SeatsVotes(Preprocessor):
         Inherently unstable, this estimate is contingent on the estimate of the swing ratio.
         """
         if year is not None:
-            t = list(self._years).index(year)
+            t = list(self.years).index(year)
         try:
             return self._attainment_gap[t]
         except AttributeError:
@@ -583,165 +586,7 @@ class SeatsVotes(Preprocessor):
         gaps = [est.efficiency_gap(sim.reshape(-1,1), turnout=turnout)
                 for sim in sims]
         return np.percentile(gaps, q=q)
-
-    def plot_rankvote(self, t=-1, year= None, normalize=False, mean_center=False,
-                      ax=None, fig_kw = dict(), scatter_kw=dict(c='k')): 
-        """
-        Plot the rankvote curve for the given time period. 
-
-        Arguments
-        ---------
-        t   :   int
-                time index
-        year:   int
-                year to plot. Overrides t
-        normalize   :   bool
-                        flag denoting whether to normalize ranks to [0,1]
-        mean_center :   bool
-                        flag denoting whether to center the rankvote to the 
-                        party vote share. If both normalize and mean_center, 
-                        the plot is actually the seats-votes curve.
-        ax          :   matplotlib.AxesSubPlot
-                        an axis to plot the data on. If None, will create a new
-                        figure.
-        fig_kw      :   dict
-                        keyword arguments for the plt.figure() call, if applicable.
-        scatter_kw  :   dict
-                        keyword arguments for the ax.scatter call, if applicable.
-
-        Returns
-        -------
-        figure and axis of the rank vote plot
-        """
-        from scipy.stats import rankdata 
-        turnout, vshares, pvshares, *rest = self._extract_election(t=t, year=year)
-        vshares = vshares[:,0]
-        if ax is None:
-            f = plt.figure(**fig_kw)
-            ax = plt.gca()
-        else:
-            f = plt.gcf()
-        ranks = rankdata(1-vshares)
-        if normalize:
-            ranks /= len(ranks)
-        if mean_center:
-            plotshares = (1 - vshares) + (pvshares[0] - .5)
-        else:
-            plotshares = 1 - vshares
-        ax.scatter(plotshares, ranks, **scatter_kw)
-        if normalize and mean_center:
-            title = 'Seats-Votes Curve ({})'
-        elif normalize:
-            title = 'Normalized Rank-Votes Curve ({})'
-        elif mean_center:
-            title = 'Centered Rank-Votes Curve ({})'
-        else:
-            title = 'Rank-Votes Curve ({})'
-        if year is None:
-            year = self._years[t]
-        ax.set_title(title.format(year))
-        return f,ax
-
-    def plot_empirical_seatsvotes(self, *args, **kwargs):
-        """
-        This is plot_rankvote with normalize and mean_center forced to be true.
-        """
-        kwargs['normalize'] = True
-        kwargs['mean_center'] = True
-        return self.plot_rankvote(*args, **kwargs)
-
-    def plot_simulated_seatsvotes(self, n_sims=10000, swing=None, Xhyp=None,
-                                  target_v=None, t=-1, year=None, predict=False,
-                                  ax=None, fig_kw=dict(),
-                                  scatter_kw=dict(),
-                                  mean_center=True, normalize=True, 
-                                  silhouette = True, 
-                                  q=[5,50,95], 
-                                  env_kw=dict(), median_kw=dict(),
-                                  return_sims = False):
-        if target_v is None:
-            target_v = self._extract_election(t=t, year=year)[2][0] #democrat party vote share in t/year
-        sims = self.simulate_elections(t=t, year=year, n_sims=n_sims, swing=swing, 
-                                       target_v=target_v, fix=False, predict=predict)
-        ranks = [rankdata(1-sim) for sim in sims] 
-        N = len(sims[0])
-        
-        if ax is None:
-            f = plt.figure(**fig_kw)
-            ax = plt.gca()
-        else:
-            f = plt.gcf()
-
-        shift = (target_v - .5) if mean_center else 0
-        rescale = N if normalize else 1
-
-        if silhouette:
-            #force silhouette aesthetics
-            scatter_kw['alpha'] = scatter_kw.get('alpha', .01)
-            scatter_kw['color'] = scatter_kw.get('color', 'k')
-            scatter_kw['linewidth'] = scatter_kw.get('linewidth', 0)
-            scatter_kw['marker'] = scatter_kw.get('marker', 'o')
-            tally = OrderedDict()
-            tally.update({i:[] for i in range(1, N+1)})
-            for sim, rank in zip(sims, ranks):
-                for hi, ri in zip(sim, rank):
-                    tally[ri].append(hi)
-            ptiles = OrderedDict([(i,np.percentile(tally[i], q=q)) for i in tally.keys()])
-            lo, med, hi = np.vstack(ptiles.values()).T
-        else:
-            #suggest these otherwise, if user doesn't provide alternatives
-            scatter_kw['alpha'] = scatter_kw.get('alpha', .2)
-            scatter_kw['color'] = scatter_kw.get('color', 'k')
-            scatter_kw['linewidth'] = scatter_kw.get('linewidth', 0)
-            scatter_kw['marker'] = scatter_kw.get('marker', 'o')
-        for sim, rank in zip(sims, ranks):
-            ax.scatter((1-sim)+shift, rank/rescale, **scatter_kw)
-        if silhouette:
-            env_kw['linestyle'] = env_kw.get('linestyle', '-')
-            env_kw['color'] = env_kw.get('color', '#FD0E35')
-            env_kw['linewidth'] = env_kw.get('linewidth', 1)
-            median_kw['linestyle'] = median_kw.get('linestyle', '-')
-            median_kw['color'] = median_kw.get('color', '#FD0E35')
-            ax.plot((1-lo)+shift, np.arange(1, N+1)/rescale, **env_kw)
-            ax.plot((1-med)+shift, np.arange(1, N+1)/rescale, **median_kw)
-            ax.plot((1-hi)+shift, np.arange(1, N+1)/rescale, **env_kw)
-        if return_sims:
-            return f,ax, sims, ranks
-        return f,ax
-
-    def _extract_election(self, t=-1, year=None):
-        """
-        get the essential statistics from the `t`th election.
-
-        Argument
-        ---------
-        t       :   int
-                    index of time desired. This should be a valid index to self.models
-        year    :   int
-                    index of year desired. This should be some year contained in the index of self.params
-
-        Returns
-        ----------
-        a tuple of observed data:
-        turnout             : (n,1) vector of the turnouts over n districts in election t
-        vote_shares         : (n,p) the share of votes won by party j, j = 1, 2, ... p
-        party_vote_shares   : (p,)  the share of overall votes won by party j
-        seats               : (n,p) the binary indicators showing whether party j won each seat
-        party_seat_share    : (p,)  the share of overall seats won by party j
-        """
-        if year is not None:
-            t = list(self._years).index(year)
-        this_model = self.models[t].model
-        obs_turnout = 1.0/this_model.weights.reshape(-1,1)
-        obs_refparty_shares = this_model.endog.reshape(-1,1)
-        obs_vote_shares = np.hstack((obs_refparty_shares, 1-obs_refparty_shares))
-        obs_seats = (obs_vote_shares > .5).astype(int)
-        obs_party_vote_shares = np.average(obs_vote_shares,
-                                           weights=obs_turnout.flatten(), axis=0)
-        obs_party_seat_shares = np.mean(obs_seats, axis=0)
-        return (obs_turnout, obs_vote_shares, obs_party_vote_shares,
-                             obs_seats, obs_party_seat_shares)
-
+    
     def district_sensitivity(self, t=-1, Xhyp=None, predict=False, fix=False,
                              swing=None, n_sims=1000, reestimate=False,
                              **jackknife_kw):
