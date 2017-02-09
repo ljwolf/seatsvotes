@@ -1,5 +1,7 @@
 from warnings import warn as Warn
 from .gelmanking import utils as gkutil
+import numpy as np
+import pandas as pd
 
 class GIGOError(Exception):
     """
@@ -56,8 +58,8 @@ class Preprocessor(object):
                  share_column='vote_share', 
                  covariates = None,
                  weight_column=None,
-                 years = None,
-                 redistrict = None,
+                 year_column = None,
+                 redistrict_column = None,
                  district_id = 'district_id',
                  missing = 'drop', 
                  uncontested=None,
@@ -67,6 +69,10 @@ class Preprocessor(object):
         else:
             self._GIGO = lambda x: Warn(x, category=GIGOError, stacklevel=2)
         self.elex_frame = frame.copy(deep=True)
+        if covariates is None:
+            self._covariate_cols = []
+        else:
+            self._covariate_cols = list(covariates)
         if uncontested is None:
             uncontested = dict()
         elif isinstance(uncontested, str):
@@ -88,9 +94,9 @@ class Preprocessor(object):
                 self._covariate_cols.extend(dummies.columns.tolist()) 
 
         self.wide = gkutil.make_designs(self.elex_frame,
-                                        years=years,
-                                        redistrict=redistrict,
-                                        district_id=district_id)
+                            years=self.elex_frame.get(year_column),
+                            redistrict=self.elex_frame.get(redistrict_column),
+                            district_id=district_id)
         self.long = pd.concat(self.wide, axis=0)
 
     def _resolve_missing(self, method='drop'):
@@ -102,7 +108,7 @@ class Preprocessor(object):
                            "\n\tRecieved: {}\n\t Supported: 'drop'"
                            "".format(method))
 
-    def _resolve_uncontesteds(self, method='censor', 
+    def _resolve_uncontested(self, method='censor', 
                               floor=None, ceil=None,
                               **special):
         if (method.lower().startswith('winsor') or
@@ -137,7 +143,7 @@ class Preprocessor(object):
                             "was awarded to the reference party to fix.")
 
         self._prefilter = self.elex_frame.copy(deep=True)
-        self.elex_frame = _unc[method](self.elex_frame, method=method,
+        self.elex_frame = _unc[method](self.elex_frame,
                                        floor=floor, ceil=ceil,
                                        **special)
 
@@ -152,7 +158,8 @@ def _censor_unc(design, floor=.25, ceil=.75):
     indicator = ((design.vote_share > ceil).astype(int) + 
                  (design.vote_share < floor).astype(int) * -1)
     design['uncontested'] = indicator
-    design['vote_share'] = design.vote_share.clip(floor=floor, ceil=ceil)
+    design['vote_share'] = np.clip(design.vote_share,
+                                   a_min=floor, a_max=ceil)
     return design
 
 def _shift_unc(design, floor=.05, ceil=.95, lower_to=.25, ceil_to=.75):
@@ -181,7 +188,7 @@ def _winsor_unc(design, floor=.25, ceil=.75):
     except ImportError:
         Warn('Cannot import scipy.stats.mstats.winsorize, censoring instead.',
                 stacklevel=2)
-        return _censor_unc(shares, floor=floor, ceil=1-ceil)
+        return _censor_unc(shares, floor=floor, ceil=ceil)
     # WARNING: the winsorize function here is a little counterintuitive in that
     #          it requires the ceil limit to be stated as "from the right,"
     #          so it should be less than .5, just like "floor"
@@ -219,8 +226,10 @@ def _impute_unc(design, covariates, floor=.25, ceil=.75):
         imputed.append(pd.concat((contested, uncontested), axis=0))
     return pd.concat(imputed, axis=0)
 
-_unc_dispatch = dict(censor=_censor_unc,
-                     shift=_shift_unc,
-                     judgeit=_shift_unc,
-                     winsor=_winsor_unc,
-                     drop=_drop_unc)
+_unc = dict(censor=_censor_unc,
+            shift=_shift_unc,
+            judgeit=_shift_unc,
+            winsor=_winsor_unc,
+            drop=_drop_unc,
+            impute=_impute_unc,
+            imp=_impute_unc)
