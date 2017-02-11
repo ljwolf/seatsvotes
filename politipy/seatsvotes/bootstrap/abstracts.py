@@ -17,7 +17,7 @@ class SeatsVotes(Preprocessor, Plotter):
                          missing=missing,
                          uncontested=uncontested
                          )
-        self._years = np.sort(self.long[self._year_column].unique())
+        self._years = np.sort(self.long.year.unique())
     
     @property
     def years(self):

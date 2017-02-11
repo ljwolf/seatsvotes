@@ -54,17 +54,18 @@ class SeatsVotes(Preprocessor, Plotter):
         """
         super().__init__(elex_frame, 
                               covariates = covariate_columns, 
-                              weight_column=weight_column, share_column=share_column,
+                              weight_column=weight_column, 
+                              share_column=share_column,
                               year_column=year_column,
                               redistrict_column = redistrict_column, 
                               district_id=district_id,
                               missing=missing, uncontested=uncontested)
-        self._years = np.sort(self.long[self._year_column].unique())
-        assert all([elex[self._year_column].unique() == year 
+        self._years = np.sort(self.long.year.unique())
+        assert all([elex.year.unique() == year 
                     for year,elex in zip(self.years, self.wide)]), "Years mismatch with designs in object.wide"
         self.models = fit.models(self._designs, share_col='vote_share',
                                  covariate_cols = self._covariate_cols,
-                                 weight_col = weight_column)
+                                 weight_col ='weight')
         self._lambdas = [model.params.get('vote_share__prev', np.nan)
                          for model in self.models]
         self._lambda = np.nanmean(self._lambdas)
