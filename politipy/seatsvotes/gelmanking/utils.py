@@ -31,9 +31,7 @@ def make_designs(elex_frame, years=None, redistrict=None, district_id = 'distric
         warn('computing redistricting from years vector')
         redistrict = census_redistricting(pd.Series(years))
     if district_id not in elex_frame.columns:
-        warn('Geometry id column {} not found in election columns.'
-             'Using index within year'.format(district_id))
-        district_id = None
+        raise KeyError("district_id provided ({}) not found in dataframe".format(district_id))
 
     working = elex_frame.copy()
     working['year'] = years

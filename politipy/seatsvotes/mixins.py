@@ -159,6 +159,7 @@ class Preprocessor(object):
                                 "dataframe. Provide a year variate "
                                 "in the input dataframe to fix")
             special['weight_column'] = special.get('weight_column', self._weight_column)
+            floor, ceil = .25, .75
         else:
             raise KeyError("Uncontested method not understood."
                             "\n\tRecieved: {}"
@@ -238,8 +239,8 @@ class Plotter(object):
         raise NotImplementedError("'_extract_election' must be implemented on child class {}"
                                   " in order to be used.".format(type(self)))
     
-    def simulate_election(self, *args, **kwargs):
-        raise NotImplementedError("'simulate_election' must be implemented on child class {}"
+    def simulate_elections(self, *args, **kwargs):
+        raise NotImplementedError("'simulate_elections' must be implemented on child class {}"
                                   " in order to be used.".format(type(self)))
         
 
@@ -280,9 +281,9 @@ class Plotter(object):
             ax = plt.gca()
         else:
             f = plt.gcf()
-        ranks = rankdata(1-vshares, method='max')
+        ranks = rankdata(1-vshares, method='max').astype(float)
         if normalize:
-            ranks /= len(ranks)
+            ranks = ranks / len(ranks)
         if mean_center:
             plotshares = (1 - vshares) + (pvshares[0] - .5)
         else:
@@ -323,7 +324,7 @@ class Plotter(object):
             target_v = self._extract_election(t=t, year=year)[2][0] #democrat party vote share in t/year
         sims = self.simulate_elections(t=t, year=year, n_sims=n_sims, swing=swing, 
                                        target_v=target_v, fix=False, predict=predict)
-        ranks = [rankdata(1-sim, method='max') for sim in sims] 
+        ranks = [rankdata(1-sim, method='max').astype(float) for sim in sims] 
         N = len(sims[0])
         
         if ax is None:
@@ -434,6 +435,7 @@ def _impute_unc(design, covariates, weight_column=None,
     to the covariates supplied for the model. Notably, this does not
     use the previous years' voteshare to predict the imputed voteshare.
     """
+    print(floor, ceil, covariates, weight_column)
     try:
         import statsmodels.api as sm
     except ImportError:

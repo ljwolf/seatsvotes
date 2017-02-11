@@ -54,10 +54,11 @@ class SeatsVotes(Preprocessor, Plotter):
         """
         super().__init__(elex_frame, 
                               covariates = covariate_columns, 
-                              weight_column=weight_column, share_column='vote_share',
+                              weight_column=weight_column, share_column=share_column,
                               year_column=year_column,
-                              redistrict_column = redistrict_column, district_id='district_id', 
-                              missing='drop', uncontested=None)
+                              redistrict_column = redistrict_column, 
+                              district_id=district_id,
+                              missing=missing, uncontested=uncontested)
         self._years = np.sort(self.long[self._year_column].unique())
         assert all([elex[self._year_column].unique() == year 
                     for year,elex in zip(self.years, self.wide)]), "Years mismatch with designs in object.wide"
@@ -150,10 +151,8 @@ class SeatsVotes(Preprocessor, Plotter):
         if swing is not None and target_v is not None:
             raise ValueError('either swing or target_v, not both.')
         if predict:
-            #print('predicting...')
             sims = np.squeeze(self.predict(n_sims=n_sims, Xhyp=Xhyp))
         else:
-            #print('counterfacting...')
             sims = np.squeeze(self.counterfactual(n_sims=n_sims,  t=t, Xhyp=Xhyp))
         # weight in prop to raw turnout, not variance weights
         turnout = (1/self.models[t].model.weights)
