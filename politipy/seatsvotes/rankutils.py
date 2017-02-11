@@ -29,7 +29,7 @@ def shares_at_rank(h,r=None, rk=None, bar_s=None):
     if r is None:
         r = np.vstack([rankdata(1-hi, method='max') for hi in h])
     if bar_s is not None and rk is None:
-        rk = np.ceil(bar_s*len(ri[0]))
+        rk = np.ceil(bar_s*len(r[0]))
     tally = OrderedDict([(k,[]) for k in np.arange(1,len(r[0])+1,1)])
     for sim, rank in zip(h,r):
         for hi,ri in zip(sim,rank):
@@ -88,23 +88,23 @@ class binreduce(object):
     
     @staticmethod
     def mean(h, r=None, n_bins=None, support=None):
-        return _reduce_rank_over_bins(h, r=r, n_bins=n_bins, support=support, reduction=np.mean)
+        return binreduce.apply(h, r=r, n_bins=n_bins, support=support, reduction=np.mean)
 
     @staticmethod
     def median(h, r=None, n_bins=None, support=None):
-        return _reduce_rank_over_bins(h, r=r, n_bins=n_bins, support=support, reduction=np.median)
+        return binreduce.apply(h, r=r, n_bins=n_bins, support=support, reduction=np.median)
 
     @staticmethod
     def mode(h, r=None, n_bins=None, support=None):
-        return _reduce_rank_over_bins(h, r=r, n_bins=n_bins, support=support, reduction=mode)
+        return binreduce.apply(h, r=r, n_bins=n_bins, support=support, reduction=mode)
 
     @staticmethod
     def count(h, r=None, n_bins=None, support=None):
-        return _reduce_rank_over_bins(h, r=r, n_bins=n_bins, support=support, reduction=len)
+        return binreduce.apply(h, r=r, n_bins=n_bins, support=support, reduction=len)
 
     @staticmethod
     def percentile(h, r=None, n_bins=None, support=None, q=[5,50,95]):
-        return _reduce_rank_over_bins(h, r=r, n_bins=n_bins, support=support, reduction=np.percentile,
+        return binreduce.apply(h, r=r, n_bins=n_bins, support=support, reduction=np.percentile,
                                       q=q)
     
     @staticmethod

@@ -82,12 +82,19 @@ class Preprocessor(object):
             self._covariate_cols = []
         else:
             self._covariate_cols = list(covariates)
-
-        self._year_column =year_column
-        self._redistrict_column = redistrict_column
-        self._district_id_column = district_id
-        self._weight_column = weight_column
-        self.elex_frame.rename(columns=dict(vote_share=share_column), inplace=True)
+        provided = [x for x in (share_column, *self._covariate_cols,
+                                weight_column,
+                                year_column, redistrict_column,
+                                district_id) if x is not None]
+        self.elex_frame[provided]
+        self.elex_frame.rename(columns={
+            district_id : 'district_id',
+            year_column : 'year',
+            weight_column : 'weight',
+            redistrict_column : 'redistrict'
+            }, inplace=True)
+        if weight_column is None:
+            self.elex_frame['weight'] = 1
 
         if uncontested is None:
             uncontested = dict(method='censor')
@@ -113,20 +120,20 @@ class Preprocessor(object):
 
         if year_column is not None:
             try:
-                self.elex_frame[self._year_column] = self.elex_frame[self._year_column].astype(int)
+                self.elex_frame['year'] = self.elex_frame.year.astype(int)
             except KeyError:
                 raise KeyError("The provided year column is not found in the dataframe."
                                " Provided: {}".format(self._year_column))
         if redistrict_column is not None:
             try:
-                self.elex_frame[self._redistrict_column]
+                self.elex_frame.redistrict = self.elex_frame.redistrict.astype(int)
             except KeyError:
                 raise KeyError("The provided year column is not found in the dataframe."
                                "\n\tProvided: {}".format(self._redistrict_column))
         self.wide = gkutil.make_designs(self.elex_frame,
-                            years=self.elex_frame[self._year_column] if self._year_column is not None else None,
-                            redistrict=self.elex_frame[self._redistrict_column] if self._redistrict_column is not None else None,
-                            district_id=self._district_id_column)
+                            years=self.elex_frame.year,
+                            redistrict=self.elex_frame.get('redistrict'),
+                            district_id='district_id')
         self.long = pd.concat(self.wide, axis=0)
 
     def _resolve_missing(self, method='drop'):
@@ -158,7 +165,7 @@ class Preprocessor(object):
                                 "years were provided in the input "
                                 "dataframe. Provide a year variate "
                                 "in the input dataframe to fix")
-            special['weight_column'] = special.get('weight_column', self._weight_column)
+            floor, ceil = .25, .75
         else:
             raise KeyError("Uncontested method not understood."
                             "\n\tRecieved: {}"
@@ -214,7 +221,7 @@ class Preprocessor(object):
         obs_refparty_shares = self.wide[t].vote_share[:,None]
         obs_vote_shares = np.hstack((obs_refparty_shares, 1-obs_refparty_shares))
         obs_seats = (obs_vote_shares > .5).astype(int)
-        obs_turnout = self.wide[t].get(self._weight_column, np.ones_like(obs_refparty_shares).flatten())
+        obs_turnout = self.wide[t].weight
         obs_party_vote_shares = np.average(obs_vote_shares,
                                            weights=obs_turnout, axis=0)
         obs_party_seat_shares = np.mean(obs_seats, axis=0)
@@ -238,8 +245,8 @@ class Plotter(object):
         raise NotImplementedError("'_extract_election' must be implemented on child class {}"
                                   " in order to be used.".format(type(self)))
     
-    def simulate_election(self, *args, **kwargs):
-        raise NotImplementedError("'simulate_election' must be implemented on child class {}"
+    def simulate_elections(self, *args, **kwargs):
+        raise NotImplementedError("'simulate_elections' must be implemented on child class {}"
                                   " in order to be used.".format(type(self)))
         
 
@@ -280,9 +287,9 @@ class Plotter(object):
             ax = plt.gca()
         else:
             f = plt.gcf()
-        ranks = rankdata(1-vshares, method='max')
+        ranks = rankdata(1-vshares, method='max').astype(float)
         if normalize:
-            ranks /= len(ranks)
+            ranks = ranks / len(ranks)
         if mean_center:
             plotshares = (1 - vshares) + (pvshares[0] - .5)
         else:
@@ -323,7 +330,7 @@ class Plotter(object):
             target_v = self._extract_election(t=t, year=year)[2][0] #democrat party vote share in t/year
         sims = self.simulate_elections(t=t, year=year, n_sims=n_sims, swing=swing, 
                                        target_v=target_v, fix=False, predict=predict)
-        ranks = [rankdata(1-sim, method='max') for sim in sims] 
+        ranks = [rankdata(1-sim, method='max').astype(float) for sim in sims] 
         N = len(sims[0])
         
         if ax is None:
@@ -427,7 +434,7 @@ def _drop_unc(design, floor=.05, ceil=.95):
     mask = (design.vote_share < floor) + (design.vote_share > (ceil))
     return design[~mask]
 
-def _impute_unc(design, covariates, weight_column=None, 
+def _impute_unc(design, covariates, 
                 floor=.25, ceil=.75, fit_params=dict()):
     """
     This imputes the uncontested seats according 
@@ -452,7 +459,7 @@ def _impute_unc(design, covariates, weight_column=None,
         unc_ix = uncontested.index
         imputor = sm.WLS(contested.vote_share, 
                          sm.add_constant(contested[covariates]),
-                         weights=contested.get(weight_column, [1]*len(contested.vote_share))).fit(**fit_params)
+                         weights=contested.weight).fit(**fit_params)
         contest.ix[unc_ix, 'vote_share'] = imputor.predict(
                                                            sm.add_constant(
                                                            uncontested[covariates],
