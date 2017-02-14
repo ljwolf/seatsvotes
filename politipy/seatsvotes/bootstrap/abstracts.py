@@ -1,7 +1,8 @@
 import numpy as np
-from ..mixins import Preprocessor, Plotter
+from ..mixins import Preprocessor, AlwaysPredictPlotter
+from warnings import warn
 
-class SeatsVotes(Preprocessor, Plotter):
+class SeatsVotes(Preprocessor, AlwaysPredictPlotter):
     def __init__(self, elex_frame, covariate_columns=None,
                  weight_column=None,
                  share_column='vote_share',
@@ -15,7 +16,7 @@ class SeatsVotes(Preprocessor, Plotter):
                          redistrict_column=redistrict_column,
                          district_id=district_id,
                          missing=missing,
-                         uncontested=uncontested
+                         uncontested=uncontested,
                          )
         self._years = np.sort(self.long.year.unique())
     
@@ -23,9 +24,8 @@ class SeatsVotes(Preprocessor, Plotter):
     def years(self):
         return self._years
 
-    def simulate_elections(self, n_sims=10000,
-                           t=-1, year=None, predict=True, 
-                           swing=0, target_v=None, fix=False):
+    def simulate_elections(self, n_sims=10000, predict=True,
+                           t=-1, year=None, swing=0, target_v=None, fix=False):
         """
         Simulate elections according to a bootstrap technique. 
 
@@ -47,7 +47,6 @@ class SeatsVotes(Preprocessor, Plotter):
                     flag denoting whether to use the predictive distribution (i.e. add bootstrapped swings to 
                     the voteshare in the previous year) or the counterfactual distribution (i.e. add bootstrapped
                     swings to the voteshare in the current year).
-        
         Returns
         ---------
         an (n_sims, n_districts) matrix of simulated vote shares. 
@@ -55,21 +54,22 @@ class SeatsVotes(Preprocessor, Plotter):
         if fix:
             raise Exception("Bootstrapped elections cannot be fixed in mean to the target value.")
         t = list(self.years).index(year) if year is not None else t
-        turnout, _, party_voteshares, *rest = self._extract_election(year=year)
         this_year = self.wide[t]
+        party_voteshares = np.average(this_year.vote_share, 
+                                      weights=this_year.weight)
+        if predict is False:
+            self._GIGO("Prediction must be true if using bootstrap")
+            target_h = this_year.vote_share
+        else:
+            target_h = this_year.vote_share__prev
         if swing is not None and target_v is not None:
             raise ValueError("either swing or target_v, not both.")
         elif target_v is not None:
-            swing = (target_v - party_voteshares[0]) 
-        turnout, _, party_voteshares, *rest = self._extract_election(year=year)
-        this_year = self.wide[t]
-        target_h = this_year.vote_share__prev if predict else this_year.vote_share
+            swing = (target_v - party_voteshares)
         obs_swings = (this_year.vote_share - this_year.vote_share__prev).values
         n_dists = len(target_h)
-        sim_swings = np.random.choice(obs_swings + swing, (n_sims, n_dists), replace=True)
+        pweights = (this_year.weight / this_year.weight.sum()).values
+        sim_swings = np.random.choice(obs_swings + swing, (n_sims, n_dists), replace=True, p=pweights)
         sim_h = target_h.values[None,:] + sim_swings
         return sim_h
-
-        ...
-
 

@@ -1,7 +1,7 @@
 import numpy as np
-from ..mixins import Preprocessor, Plotter
+from ..mixins import Preprocessor, AlwaysPredictPlotter
 
-class SeatsVotes(Preprocessor, Plotter):
+class SeatsVotes(Preprocessor, AlwaysPredictPlotter):
     def __init__(self, elex_frame, covariate_columns=None,
                  weight_column=None,
                  share_column='vote_share',

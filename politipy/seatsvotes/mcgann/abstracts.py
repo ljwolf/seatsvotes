@@ -2,7 +2,7 @@ import numpy as np
 from warnings import warn
 import statsmodels.api as sm
 import pandas as pd
-from ..mixins import Preprocessor, Plotter
+from ..mixins import Preprocessor, AlwaysPredictPlotter
 
 def _year_to_decade(yr):
     """
@@ -11,7 +11,7 @@ def _year_to_decade(yr):
     """
     return (yr - 2) - (yr - 2) % 10
 
-class SeatsVotes(Preprocessor, Plotter):
+class SeatsVotes(Preprocessor, AlwaysPredictPlotter):
     def __init__(self, frame,
                  share_column='vote_share',
                  group_by='state',
@@ -61,8 +61,6 @@ class SeatsVotes(Preprocessor, Plotter):
                 
     def simulate_elections(self, n_sims = 10000, t=-1, year=None, 
                            target_v=None, swing=0., fix=False, predict=True):
-        if not predict:
-            self._GIGO("The McGann method always does prediction, so the predict option is ignored.")
         if year is None:
             year = list(self.years)[t]
         else:
@@ -70,8 +68,8 @@ class SeatsVotes(Preprocessor, Plotter):
         decade = _year_to_decade(year)
         decade_t = list(self._decade_starts).index(decade)
         model = self.models[decade_t]
-        X = sm.add_constant(self.wide[t][self._covariate_cols])
-        expectation = np.asarray(model.predict(X)).flatten()
+        X = sm.add_constant(self.wide[t][self._covariate_cols], has_constant='add').values
+        expectation = X.dot(model.params.values[:,None]).flatten()
         if target_v is not None:
             exp_pvs = np.average(expectation,weights=self.wide[t].weight)
             diff = (target_v - exp_pvs)

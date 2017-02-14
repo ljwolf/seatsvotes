@@ -18,6 +18,9 @@ class GIGOError(Exception):
     the validity of your inference.
     """
     pass
+
+def _raiseGIGO(msg):
+    raise GIGOError(msg)
     
 class Preprocessor(object):
     """
@@ -74,7 +77,7 @@ class Preprocessor(object):
                  break_on_GIGO=True):
         super().__init__()
         if break_on_GIGO:
-            self._GIGO = lambda x: GIGOError(x)
+            self._GIGO = _raiseGIGO
         else:
             self._GIGO = lambda x: Warn(x, category=GIGOError, stacklevel=2)
         self.elex_frame = frame.copy(deep=True)
@@ -138,7 +141,7 @@ class Preprocessor(object):
 
     def _resolve_missing(self, method='drop'):
         if (method.lower() == 'drop'):
-            self.elex_frame.dropna(subset=self._covariate_cols,
+            self.elex_frame.dropna(subset=self._covariate_cols + ['weight'],
                                    inplace=True)
         else:
             raise KeyError("Method to resolve missing data not clear."
@@ -154,18 +157,20 @@ class Preprocessor(object):
         elif (method.lower() in ('shift', 'drop')):
             floor, ceil = .05, .95
         elif method.lower().startswith('imp'):
-            if special.get('covariates') is []:
-                raise self._GIGO("Imputation selected but no covariates "
+            if special.get('covariates') == [] or special.get('covariates') is None:
+                self._GIGO("Imputation selected but no covariates "
                                 "provided. Shifting uncontesteds to the "
                                 "mean is likely to harm the validity "
                                 "of inference. Provide a list to "
                                 "coviarate_cols to fix.")
             if 'year' not in self.elex_frame:
-                raise self._GIGO("Imputation pools over each year. No "
+                self._GIGO("Imputation pools over each year. No "
                                 "years were provided in the input "
                                 "dataframe. Provide a year variate "
                                 "in the input dataframe to fix")
             floor, ceil = .25, .75
+        elif method.lower() == 'ignore':
+            return
         else:
             raise KeyError("Uncontested method not understood."
                             "\n\tRecieved: {}"
@@ -316,18 +321,42 @@ class Plotter(object):
         kwargs['mean_center'] = True
         return self.plot_rankvote(*args, **kwargs)
 
-    def plot_simulated_seatsvotes(self, n_sims=10000, swing=None, Xhyp=None,
+    def plot_simulated_seatsvotes(self, n_sims=10000, swing=0, Xhyp=None,
                                   target_v=None, t=-1, year=None, predict=False,
                                   ax=None, fig_kw=dict(),
                                   scatter_kw=dict(),
                                   mean_center=True, normalize=True, 
                                   silhouette = True, 
                                   q=[5,50,95], 
+                                  band=False,
                                   env_kw=dict(), median_kw=dict(),
                                   return_sims = False):
+        """
+        This plots the full distribution of rank-votes for simulated voteshares. 
+
+        Arguments
+        n_sims
+        swing
+        Xhyp
+        target_v
+        t
+        year
+        predict
+        ax
+        fig_kw
+        scatter_kw
+        mean_center
+        normalize
+        silhouette
+        band
+        q
+        env_kw
+        median_kw
+        return_sims
+        """
         from scipy.stats import rankdata
-        if target_v is None:
-            target_v = self._extract_election(t=t, year=year)[2][0] #democrat party vote share in t/year
+        if year is not None:
+            t = list(self.years).index(year)
         sims = self.simulate_elections(t=t, year=year, n_sims=n_sims, swing=swing, 
                                        target_v=target_v, fix=False, predict=predict)
         ranks = [rankdata(1-sim, method='max').astype(float) for sim in sims] 
@@ -338,6 +367,10 @@ class Plotter(object):
             ax = plt.gca()
         else:
             f = plt.gcf()
+
+        if mean_center:
+            target_v = np.average(self.wide[t].vote_share,
+                                  weights=self.wide[t].weight)
 
         shift = (target_v - .5) if mean_center else 0
         rescale = N if normalize else 1
@@ -369,13 +402,33 @@ class Plotter(object):
             env_kw['linewidth'] = env_kw.get('linewidth', 1)
             median_kw['linestyle'] = median_kw.get('linestyle', '-')
             median_kw['color'] = median_kw.get('color', '#FD0E35')
-            ax.plot((1-lo)+shift, np.arange(1, N+1)/rescale, **env_kw)
+            if band:
+                env_kw['alpha']=.4
+                ax.fill_betweenx(np.arange(1, N+1)/rescale, 
+                                 (1-lo)+shift, (1-hi)+shift, **env_kw)
+            else:
+                ax.plot((1-lo)+shift, np.arange(1, N+1)/rescale, **env_kw)
+                ax.plot((1-med)+shift, np.arange(1, N+1)/rescale, **median_kw)
             ax.plot((1-med)+shift, np.arange(1, N+1)/rescale, **median_kw)
-            ax.plot((1-hi)+shift, np.arange(1, N+1)/rescale, **env_kw)
         if return_sims:
             return f,ax, sims, ranks
         return f,ax
 
+
+class AlwaysPredictPlotter(Plotter):
+    def plot_simulated_seatsvotes(self, n_sims=10000, swing=0, Xhyp=None,
+                                  target_v=None, t=-1, year=None, 
+                                  ax=None, fig_kw=dict(), predict=True,
+                                  scatter_kw=dict(),
+                                  mean_center=True, normalize=True, 
+                                  silhouette = True, 
+                                  q=[5,50,95], 
+                                  band=False,
+                                  env_kw=dict(), median_kw=dict(),
+                                  return_sims = False):
+        if predict is False:
+            self._GIGO("Prediction should always be enabled for {}".format(self.__class__))
+        return Plotter.plot_simulated_seatsvotes(**vars())
 ###################################
 # Dispatch Table for Uncontesteds #
 ###################################
