@@ -140,13 +140,22 @@ class Preprocessor(object):
         self.long = pd.concat(self.wide, axis=0)
 
     def _resolve_missing(self, method='drop'):
+        targets = self._covariate_cols + ['weight']
         if (method.lower() == 'drop'):
-            self.elex_frame.dropna(subset=self._covariate_cols + ['weight'],
-                                   inplace=True)
+            self.elex_frame.dropna(subset=targets, inplace=True)
+        elif (method.lower() == 'impute'):
+            for i, year in self.elex_frame.groupby('year'):
+                colmeans = year[targets].mean(axis=0)
+                self.elex_frame.ix[year.index, targets] = year[targets].fillna(colmeans)
         else:
             raise KeyError("Method to resolve missing data not clear."
                            "\n\tRecieved: {}\n\t Supported: 'drop'"
                            "".format(method))
+        any_in_column = self.elex_frame[targets].isnull().any(axis=0)
+        if any_in_column.any():
+            still_missing = self.elex_frame.columns[any_in_columns]
+            self._GIGO('After resolving missing data using {}, the following columns '
+                       'still have missing data: {}'.format(still_missing))
 
     def _resolve_uncontested(self, method='censor', 
                               floor=None, ceil=None,

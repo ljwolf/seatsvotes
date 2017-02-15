@@ -51,14 +51,24 @@ class SeatsVotes(Preprocessor, AlwaysPredictPlotter):
         self.models = []
         for yr in self._decade_starts:
             self.decades[yr] = pd.concat(self.decades[yr], axis=0)
-            self.models.append(sm.WLS(self.decades[yr].vote_share,
+            
+            ### WLS Yields incredibly precise simulation values? Not sure why.
+            self.models.append(sm.GLS(self.decades[yr].vote_share,
                                  sm.add_constant(self.decades[yr][self._covariate_cols]),
-                                 weights=self.decades[yr].weight).fit())
+                                 sigma=1/self.decades[yr].weight).fit())
     
     @property
     def years(self):
         return self._years
-                
+    
+    @property
+    def params(self):
+        """
+        All of the parameters across all models
+        """
+        unite = pd.concat([model.params for model in self.models], axis=1)
+        unite.columns = self.years
+        return unite
     def simulate_elections(self, n_sims = 10000, t=-1, year=None, 
                            target_v=None, swing=0., fix=False, predict=True):
         if year is None:
@@ -68,15 +78,19 @@ class SeatsVotes(Preprocessor, AlwaysPredictPlotter):
         decade = _year_to_decade(year)
         decade_t = list(self._decade_starts).index(decade)
         model = self.models[decade_t]
+        mask = (self.decades[decade].year == year)
         X = sm.add_constant(self.wide[t][self._covariate_cols], has_constant='add').values
-        expectation = X.dot(model.params.values[:,None]).flatten()
+        expectation = model.predict(X)
         if target_v is not None:
             exp_pvs = np.average(expectation,weights=self.wide[t].weight)
             diff = (target_v - exp_pvs)
             expectation += diff
         if swing is not None:
             expectation += swing
-        sims = np.random.normal(expectation, model.scale**.5, size=(n_sims, X.shape[0])) 
+        ### grab the square of the cov relating to the simulations and cast to std. dev.
+        sigma = model.model.sigma[mask]**.5
+        sigma *= model.scale ** .5
+        sims = np.random.normal(expectation, sigma, size=(n_sims, X.shape[0])) 
         if fix:
             sims -= sims.mean(axis=0)
         return sims
