@@ -7,7 +7,7 @@ from ..mixins import Preprocessor, AlwaysPredictPlotter
 def _year_to_decade(yr):
     """
     A simple function so I don't mess this up later, this constructs the *redistricting*
-    decade of a district. This is offset from the regular decade a year is in by two. 
+    decade of a district. This is offset from the regular decade a year is in by two.
     """
     return (yr - 2) - (yr - 2) % 10
 
@@ -51,16 +51,16 @@ class SeatsVotes(Preprocessor, AlwaysPredictPlotter):
         self.models = []
         for yr in self._decade_starts:
             self.decades[yr] = pd.concat(self.decades[yr], axis=0)
-            
+
             ### WLS Yields incredibly precise simulation values? Not sure why.
             self.models.append(sm.GLS(self.decades[yr].vote_share,
                                  sm.add_constant(self.decades[yr][self._covariate_cols]),
                                  sigma=1/self.decades[yr].weight).fit())
-    
+
     @property
     def years(self):
         return self._years
-    
+
     @property
     def params(self):
         """
@@ -69,7 +69,7 @@ class SeatsVotes(Preprocessor, AlwaysPredictPlotter):
         unite = pd.concat([model.params for model in self.models], axis=1)
         unite.columns = self.years
         return unite
-    def simulate_elections(self, n_sims = 10000, t=-1, year=None, 
+    def simulate_elections(self, n_sims = 10000, t=-1, year=None,
                            target_v=None, swing=0., fix=False, predict=True):
         if year is None:
             year = list(self.years)[t]
@@ -79,8 +79,8 @@ class SeatsVotes(Preprocessor, AlwaysPredictPlotter):
         decade_t = list(self._decade_starts).index(decade)
         model = self.models[decade_t]
         mask = (self.decades[decade].year == year)
-        X = sm.add_constant(self.wide[t][self._covariate_cols], has_constant='add').values
-        expectation = model.predict(X)
+        X = np.asarray(self.wide[t][self._covariate_cols])
+        expectation = model.predict(sm.add_constant(X, has_constant='add'))
         if target_v is not None:
             exp_pvs = np.average(expectation,weights=self.wide[t].weight)
             diff = (target_v - exp_pvs)
@@ -90,7 +90,7 @@ class SeatsVotes(Preprocessor, AlwaysPredictPlotter):
         ### grab the square of the cov relating to the simulations and cast to std. dev.
         sigma = model.model.sigma[mask]**.5
         sigma *= model.scale ** .5
-        sims = np.random.normal(expectation, sigma, size=(n_sims, X.shape[0])) 
+        sims = np.random.normal(expectation, sigma, size=(n_sims, X.shape[0]))
         if fix:
             sims -= sims.mean(axis=0)
         return sims
