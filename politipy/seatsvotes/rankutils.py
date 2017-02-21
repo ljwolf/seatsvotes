@@ -111,6 +111,6 @@ class binreduce(object):
     def in_band(h, r=None, lower=.45, upper=.55, 
                 reduction=np.mean, **reduce_kw):
         if r is None:
-            r = np.vstack([rankdata(1-hi, method='max') for hi in h])
+            r = np.vstack([rankdata(hi, method='max') for hi in h])
         mask = (lower <= h) & (h <= upper)
         return reduction(r[mask], **reduce_kw)
