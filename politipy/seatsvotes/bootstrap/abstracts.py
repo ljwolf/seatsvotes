@@ -73,10 +73,12 @@ class SeatsVotes(Preprocessor, AlwaysPredictPlotter):
             raise ValueError("either swing or target_v, not both.")
         elif target_v is not None:
             swing = (target_v - party_voteshares)
-        obs_swings = (this_year.vote_share - this_year.vote_share__prev).values
+        obs_swings = (this_year.vote_share - this_year.vote_share__prev)
         n_dists = len(target_h)
         pweights = (this_year.weight / this_year.weight.sum()).values
-        sim_swings = np.random.choice(obs_swings + swing, (n_sims, n_dists), 
+        pweights = pweights[~obs_swings.isnull().values]
+        pweights /= pweights.sum()
+        sim_swings = np.random.choice(obs_swings.dropna() + swing, (n_sims, n_dists), 
                                       replace=True, p=pweights)
         sim_h = target_h.values[None,:] + sim_swings
         return sim_h
