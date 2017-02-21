@@ -9,7 +9,7 @@ try:
 except ImportError:
     class RaiseForMissingMPL(object):
         def __getattribute__(*_, **__):
-            raise ImportError("No module named matplotlib") 
+            raise ImportError("No module named matplotlib")
     plt = RaiseForMissingMPL()
 
 class GIGOError(Exception):
@@ -21,14 +21,14 @@ class GIGOError(Exception):
 
 def _raiseGIGO(msg):
     raise GIGOError(msg)
-    
+
 class Preprocessor(object):
     """
     """
     @classmethod
-    def from_arrays(cls, voteshares, 
-                       turnout, 
-                       years, 
+    def from_arrays(cls, voteshares,
+                       turnout,
+                       years,
                        redistrict,
                        district_ids,
                        covariates = None,
@@ -40,9 +40,9 @@ class Preprocessor(object):
         Everything must be:
         1. no nan
         2. no uncontesteds/uncontesteds are resolved to 0,1
-        3. all arrays are (nt,k), where k is the number of 
-            relevant covariates for the attribute. 
-        4. 
+        3. all arrays are (nt,k), where k is the number of
+            relevant covariates for the attribute.
+        4.
         """
         if covariates is None:
             covariates = dict()
@@ -54,8 +54,8 @@ class Preprocessor(object):
                                             district_id = district_ids,
                                             **covariates
                                             ))
-        return cls(frame, 
-                   share_column='vote_share', 
+        return cls(frame,
+                   share_column='vote_share',
                    weight_column='turnout',
                    covariates = list(covariates.keys()),
                    years = 'year',
@@ -65,14 +65,14 @@ class Preprocessor(object):
                    uncontested=uncontested,
                    break_on_GIGO=break_on_GIGO)
 
-    def __init__(self, frame, 
-                 share_column='vote_share', 
+    def __init__(self, frame,
+                 share_column='vote_share',
                  covariates = None,
                  weight_column=None,
                  year_column = 'year',
                  redistrict_column = None,
                  district_id = 'district_id',
-                 missing = 'drop', 
+                 missing = 'drop',
                  uncontested=None,
                  break_on_GIGO=True):
         super().__init__()
@@ -112,13 +112,13 @@ class Preprocessor(object):
                 self._covariate_cols.append('uncontested')
         else:
             dummies = pd.get_dummies(self.elex_frame.uncontested)
-            dummies.columns = ['uncontested_R', 
-                                 'contested', 
+            dummies.columns = ['uncontested_R',
+                                 'contested',
                                'uncontested_D']
             self.elex_frame = pd.concat((self.elex_frame, dummies),axis=1)
             self.elex_frame.drop('uncontested', axis=1, inplace=True)
             if uncontested['method'].lower() != 'drop':
-                self._covariate_cols.extend(dummies.columns.tolist()) 
+                self._covariate_cols.extend(dummies.columns.tolist())
 
 
         if year_column is not None:
@@ -138,6 +138,23 @@ class Preprocessor(object):
                             redistrict=self.elex_frame.get('redistrict'),
                             district_id='district_id')
         self.long = pd.concat(self.wide, axis=0)
+    @staticmethod
+    def _impute_turnout_from_voteshare_and_state(df, turnout_col='turnout',
+                                                 state_col='state'):
+        complete = df.dropna(subset=(turnout_col), inplace=False)
+        missing_data = df[['vote_share'] + [state_col]].isnull().any(axis=0)
+        if missing_data.any():
+            missing_cols = df.columns[missing_data]
+            self._GIGO("Missing data in imputation of turnout "
+                       "for column: {}".format(missing_data))
+        import statsmodels.formula.api as smf, statsmodels.api as sm
+        model = smf.OLS('turnout ~ vote_share + I(vote_share**2) + C(state, Treatment)',
+                        data=df).fit()
+        incomplete_ix = complete[complete[turnout_col].isnull()].index
+        imcomplete_X = df.ix[incomplete, [turnout_col, state_col]]
+        preds = model.predict(sm.add_constant(incomplete_X))
+        df.ix[turnout_col, incomplete_ix] = preds
+        return df[turnout_col]
 
     def _resolve_missing(self, method='drop'):
         targets = self._covariate_cols + ['weight']
@@ -147,6 +164,8 @@ class Preprocessor(object):
             for i, year in self.elex_frame.groupby('year'):
                 colmeans = year[targets].mean(axis=0)
                 self.elex_frame.ix[year.index, targets] = year[targets].fillna(colmeans)
+        elif (method.lower() == 'ignore'):
+            return
         else:
             raise KeyError("Method to resolve missing data not clear."
                            "\n\tRecieved: {}\n\t Supported: 'drop'"
@@ -157,7 +176,7 @@ class Preprocessor(object):
             self._GIGO('After resolving missing data using {}, the following columns '
                        'still have missing data: {}'.format(still_missing))
 
-    def _resolve_uncontested(self, method='censor', 
+    def _resolve_uncontested(self, method='censor',
                               floor=None, ceil=None,
                               **special):
         if (method.lower().startswith('winsor') or
@@ -209,7 +228,7 @@ class Preprocessor(object):
         self.elex_frame = _unc[method](design,
                                        floor=floor, ceil=ceil,
                                        **special)
-    
+
     def _extract_election(self, t=-1, year=None):
         """
         get the essential statistics from the `t`th election.
@@ -244,7 +263,7 @@ class Preprocessor(object):
 
 class Plotter(object):
     """
-    Class to proide plotting capabilities to various seats-votes simulation methods. 
+    Class to proide plotting capabilities to various seats-votes simulation methods.
     """
 
     def __init__(self):
@@ -258,16 +277,16 @@ class Plotter(object):
     def _extract_election(self, *args, **kwargs):
         raise NotImplementedError("'_extract_election' must be implemented on child class {}"
                                   " in order to be used.".format(type(self)))
-    
+
     def simulate_elections(self, *args, **kwargs):
         raise NotImplementedError("'simulate_elections' must be implemented on child class {}"
                                   " in order to be used.".format(type(self)))
-        
+
 
     def plot_rankvote(self, t=-1, year= None, normalize=False, mean_center=False,
-                      ax=None, fig_kw = dict(), scatter_kw=dict(c='k')): 
+                      ax=None, fig_kw = dict(), scatter_kw=dict(c='k')):
         """
-        Plot the rankvote curve for the given time period. 
+        Plot the rankvote curve for the given time period.
 
         Arguments
         ---------
@@ -278,8 +297,8 @@ class Plotter(object):
         normalize   :   bool
                         flag denoting whether to normalize ranks to [0,1]
         mean_center :   bool
-                        flag denoting whether to center the rankvote to the 
-                        party vote share. If both normalize and mean_center, 
+                        flag denoting whether to center the rankvote to the
+                        party vote share. If both normalize and mean_center,
                         the plot is actually the seats-votes curve.
         ax          :   matplotlib.AxesSubPlot
                         an axis to plot the data on. If None, will create a new
@@ -293,7 +312,7 @@ class Plotter(object):
         -------
         figure and axis of the rank vote plot
         """
-        from scipy.stats import rankdata 
+        from scipy.stats import rankdata
         turnout, vshares, pvshares, *rest = self._extract_election(t=t, year=year)
         vshares = vshares[:,0]
         if ax is None:
@@ -334,14 +353,14 @@ class Plotter(object):
                                   target_v=None, t=-1, year=None, predict=False,
                                   ax=None, fig_kw=dict(),
                                   scatter_kw=dict(),
-                                  mean_center=True, normalize=True, 
-                                  silhouette = True, 
-                                  q=[5,50,95], 
+                                  mean_center=True, normalize=True,
+                                  silhouette = True,
+                                  q=[5,50,95],
                                   band=False,
                                   env_kw=dict(), median_kw=dict(),
                                   return_sims = False):
         """
-        This plots the full distribution of rank-votes for simulated voteshares. 
+        This plots the full distribution of rank-votes for simulated voteshares.
 
         Arguments
         n_sims
@@ -366,11 +385,11 @@ class Plotter(object):
         from scipy.stats import rankdata
         if year is not None:
             t = list(self.years).index(year)
-        sims = self.simulate_elections(t=t, year=year, n_sims=n_sims, swing=swing, 
+        sims = self.simulate_elections(t=t, year=year, n_sims=n_sims, swing=swing,
                                        target_v=target_v, fix=False, predict=predict)
-        ranks = [rankdata(1-sim, method='max').astype(float) for sim in sims] 
+        ranks = [rankdata(1-sim, method='max').astype(float) for sim in sims]
         N = len(sims[0])
-        
+
         if ax is None:
             f = plt.figure(**fig_kw)
             ax = plt.gca()
@@ -413,7 +432,7 @@ class Plotter(object):
             median_kw['color'] = median_kw.get('color', '#FD0E35')
             if band:
                 env_kw['alpha']=.4
-                ax.fill_betweenx(np.arange(1, N+1)/rescale, 
+                ax.fill_betweenx(np.arange(1, N+1)/rescale,
                                  (1-lo)+shift, (1-hi)+shift, **env_kw)
             else:
                 ax.plot((1-lo)+shift, np.arange(1, N+1)/rescale, **env_kw)
@@ -426,12 +445,12 @@ class Plotter(object):
 
 class AlwaysPredictPlotter(Plotter):
     def plot_simulated_seatsvotes(self, n_sims=10000, swing=0, Xhyp=None,
-                                  target_v=None, t=-1, year=None, 
+                                  target_v=None, t=-1, year=None,
                                   ax=None, fig_kw=dict(), predict=True,
                                   scatter_kw=dict(),
-                                  mean_center=True, normalize=True, 
-                                  silhouette = True, 
-                                  q=[5,50,95], 
+                                  mean_center=True, normalize=True,
+                                  silhouette = True,
+                                  q=[5,50,95],
                                   band=False,
                                   env_kw=dict(), median_kw=dict(),
                                   return_sims = False):
@@ -446,7 +465,7 @@ def _censor_unc(design, floor=.25, ceil=.75):
     """
     This will clip vote shares to the given mask.
     """
-    indicator = ((design.vote_share > ceil).astype(int) + 
+    indicator = ((design.vote_share > ceil).astype(int) +
                  (design.vote_share < floor).astype(int) * -1)
     design['uncontested'] = indicator
     design['vote_share'] = np.clip(design.vote_share,
@@ -458,7 +477,7 @@ def _shift_unc(design, floor=.05, ceil=.95, lower_to=.25, ceil_to=.75):
     This replicates the "uncontested.default" method from JudgeIt, which replaces
     the uncontested elections (those outside of the (.05, .95) range) to (.25,.75).
     """
-    indicator = ((design.vote_share > ceil).astype(int) + 
+    indicator = ((design.vote_share > ceil).astype(int) +
                  (design.vote_share < floor).astype(int) * -1)
     design['uncontested'] = indicator
     lowers = design.query('vote_share < @floor').index
@@ -471,7 +490,7 @@ def _winsor_unc(design, floor=.25, ceil=.75):
     """
     This winsorizes vote shares to a given percentile.
     """
-    indicator = ((design.vote_share > ceil).astype(int) + 
+    indicator = ((design.vote_share > ceil).astype(int) +
                  (design.vote_share < floor).astype(int) * -1)
     design['uncontested'] = indicator
     try:
@@ -483,7 +502,7 @@ def _winsor_unc(design, floor=.25, ceil=.75):
     # WARNING: the winsorize function here is a little counterintuitive in that
     #          it requires the ceil limit to be stated as "from the right,"
     #          so it should be less than .5, just like "floor"
-    design['vote_share'] = np.asarray(winsorize(design.vote_share, 
+    design['vote_share'] = np.asarray(winsorize(design.vote_share,
                                                 limits=(floor, 1-ceil)))
     return design
 
@@ -496,20 +515,20 @@ def _drop_unc(design, floor=.05, ceil=.95):
     mask = (design.vote_share < floor) + (design.vote_share > (ceil))
     return design[~mask]
 
-def _impute_unc(design, covariates, 
+def _impute_unc(design, covariates,
                 floor=.25, ceil=.75, fit_params=dict()):
     """
-    This imputes the uncontested seats according 
+    This imputes the uncontested seats according
     to the covariates supplied for the model. Notably, this does not
     use the previous years' voteshare to predict the imputed voteshare.
     """
     try:
         import statsmodels.api as sm
     except ImportError:
-        warn("Must have statsmodels installed to conduct imputation", 
+        warn("Must have statsmodels installed to conduct imputation",
              category=ImportError, stacklevel=2)
         raise
-    indicator = ((design.vote_share > ceil).astype(int) + 
+    indicator = ((design.vote_share > ceil).astype(int) +
                  (design.vote_share < floor).astype(int) * -1)
     design['uncontested'] = indicator
     imputed = []
@@ -519,8 +538,8 @@ def _impute_unc(design, covariates,
         contested = contest[~mask]
         uncontested = contest[mask]
         unc_ix = uncontested.index
-        imputor = sm.WLS(contested.vote_share, 
-                         sm.add_constant(contested[covariates]),
+        imputor = sm.WLS(contested.vote_share,
+                         sm.add_constant(contested[covariates], has_constant='add'),
                          weights=contested.weight).fit(**fit_params)
         contest.ix[unc_ix, 'vote_share'] = imputor.predict(
                                                            sm.add_constant(
@@ -536,13 +555,13 @@ def _impute_using_prev_voteshare(design, covariates,
     try:
         import statsmodels.api as sm
     except ImportError:
-        warn("Must have statsmodels installed to conduct imputation", 
+        warn("Must have statsmodels installed to conduct imputation",
              category=ImportError, stacklevel=2)
     imputed = []
     covariates += ['vote_share__prev']
     for yr, contest in design.groupby("year"):
-        # iterate through, estimating models with only 
-        # mutually-contested pairs with no redistricting, then 
+        # iterate through, estimating models with only
+        # mutually-contested pairs with no redistricting, then
         # predict the uncontested election. With that h, move to the next time.
         ...
 
