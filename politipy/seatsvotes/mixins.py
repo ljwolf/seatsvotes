@@ -2,6 +2,7 @@ from warnings import warn as Warn
 from collections import OrderedDict
 from .gelmanking import utils as gkutil
 import numpy as np
+import copy 
 import pandas as pd
 
 try:
@@ -91,11 +92,16 @@ class Preprocessor(object):
                                 district_id) if x is not None]
         self.elex_frame[provided]
         self.elex_frame.rename(columns={
+            share_column : 'vote_share',
             district_id : 'district_id',
             year_column : 'year',
             weight_column : 'weight',
             redistrict_column : 'redistrict'
             }, inplace=True)
+        try:
+            assert len(self.elex_frame.columns) == len(set(self.elex_frame.columns))
+        except AssertionError:
+            raise AssertionError('Election frame contains duplicated columns: {}'.format(self.elex_frame.columns))
         if weight_column is None:
             self.elex_frame['weight'] = 1
 
@@ -104,7 +110,19 @@ class Preprocessor(object):
         elif isinstance(uncontested, str):
             uncontested = dict(method=uncontested)
         if uncontested['method'].lower().startswith('imp'):
-            uncontested['covariates'] = self._covariate_cols
+            uncontested['covariates'] = copy.deepcopy(self._covariate_cols)
+        if year_column is not None:
+            try:
+                self.elex_frame['year'] = self.elex_frame.year.astype(int)
+            except KeyError:
+                raise KeyError("The provided year column is not found in the dataframe."
+                               " Provided: {}".format(self._year_column))
+        if redistrict_column is not None:
+            try:
+                self.elex_frame.redistrict = self.elex_frame.redistrict.astype(int)
+            except KeyError:
+                raise KeyError("The provided year column is not found in the dataframe."
+                               "\n\tProvided: {}".format(self._redistrict_column))
         self._resolve_missing(method=missing)
         self._resolve_uncontested(**uncontested)
         if uncontested.get('ordinal', True):
@@ -121,26 +139,19 @@ class Preprocessor(object):
                 self._covariate_cols.extend(dummies.columns.tolist())
 
 
-        if year_column is not None:
-            try:
-                self.elex_frame['year'] = self.elex_frame.year.astype(int)
-            except KeyError:
-                raise KeyError("The provided year column is not found in the dataframe."
-                               " Provided: {}".format(self._year_column))
-        if redistrict_column is not None:
-            try:
-                self.elex_frame.redistrict = self.elex_frame.redistrict.astype(int)
-            except KeyError:
-                raise KeyError("The provided year column is not found in the dataframe."
-                               "\n\tProvided: {}".format(self._redistrict_column))
         self.wide = gkutil.make_designs(self.elex_frame,
                             years=self.elex_frame.year,
                             redistrict=self.elex_frame.get('redistrict'),
                             district_id='district_id')
         self.long = pd.concat(self.wide, axis=0)
+
     @staticmethod
     def _impute_turnout_from_voteshare_and_state(df, turnout_col='turnout',
                                                  state_col='state'):
+        """
+        Impute turnout from the voteshare and state category. This specifies:
+        turnout ~ vote_share + vote_share**2 + StateFixedEffect
+        """
         complete = df.dropna(subset=(turnout_col), inplace=False)
         missing_data = df[['vote_share'] + [state_col]].isnull().any(axis=0)
         if missing_data.any():
@@ -157,6 +168,12 @@ class Preprocessor(object):
         return df[turnout_col]
 
     def _resolve_missing(self, method='drop'):
+        """
+        Resolve missing data issues using a given method:
+        drop    :   drop entries that are missing any data
+        impute  :   take the mean of the column as the value in the data
+        ignore  :   ignore the missing values
+        """
         targets = self._covariate_cols + ['weight']
         if (method.lower() == 'drop'):
             self.elex_frame.dropna(subset=targets, inplace=True)
@@ -179,9 +196,19 @@ class Preprocessor(object):
     def _resolve_uncontested(self, method='censor',
                               floor=None, ceil=None,
                               **special):
+        """
+        Resolve uncontested elections' vote shares using a specific method
+        censor  :   clip the data to a given vote share
+        winsor  :   clip the data to a given percentage
+        drop    :   drop uncontested elections
+        impute  :   impute vote shares from the available data in each year
+                    on other vote shares
+        impute_recursive: impute vote shares from available data in each year
+                          and the previous year's (possibly imputed) vote share.
+        """
         if (method.lower().startswith('winsor') or
             method.lower().startswith('censor')):
-            floor, ceil = .25, .75
+            floor, ceil = .1,.9
         elif (method.lower() in ('shift', 'drop')):
             floor, ceil = .05, .95
         elif method.lower().startswith('imp'):
@@ -196,7 +223,12 @@ class Preprocessor(object):
                                 "years were provided in the input "
                                 "dataframe. Provide a year variate "
                                 "in the input dataframe to fix")
-            floor, ceil = .25, .75
+            floor, ceil = .01,.99
+            if method.endswith('recursive'):
+                # to do the recursive imputation, you need to get the redistricting vector
+                if self.elex_frame.get('redistrict') is None:
+                    Warn('computing redistricting from years vector')
+                    self.elex_frame['redist'] = gkutil.census_redistricting(pd.Series(self.elex_frame.year))
         elif method.lower() == 'ignore':
             return
         else:
@@ -213,15 +245,7 @@ class Preprocessor(object):
         #                    "unknown vote share a 0 if the seat was "
         #                    "awarded to the opposition and 1 if the seat "
         #                    "was awarded to the reference party to fix.")
-
-        if method.lower() == 'impute_recursive':
-            wide = gkutil.make_designs(self.elex_frame,
-                            years=self.elex_frame.get(self._year_column),
-                            redistrict=self.elex_frame.get(self._redistrict_column),
-                            district_id=self._district_id_column)
-            design = pd.concat(wide, axis=1)
-        else:
-            design = self.elex_frame.copy(deep=True)
+        design = self.elex_frame.copy(deep=True)
 
 
         self._prefilter = self.elex_frame.copy(deep=True)
@@ -442,7 +466,6 @@ class Plotter(object):
             return f,ax, sims, ranks
         return f,ax
 
-
 class AlwaysPredictPlotter(Plotter):
     def plot_simulated_seatsvotes(self, n_sims=10000, swing=0, Xhyp=None,
                                   target_v=None, t=-1, year=None,
@@ -457,6 +480,7 @@ class AlwaysPredictPlotter(Plotter):
         if predict is False:
             self._GIGO("Prediction should always be enabled for {}".format(self.__class__))
         return Plotter.plot_simulated_seatsvotes(**vars())
+
 ###################################
 # Dispatch Table for Uncontesteds #
 ###################################
@@ -525,7 +549,7 @@ def _impute_unc(design, covariates,
     try:
         import statsmodels.api as sm
     except ImportError:
-        warn("Must have statsmodels installed to conduct imputation",
+        Warn("Must have statsmodels installed to conduct imputation",
              category=ImportError, stacklevel=2)
         raise
     indicator = ((design.vote_share > ceil).astype(int) +
@@ -549,21 +573,74 @@ def _impute_unc(design, covariates,
     return pd.concat(imputed, axis=0)
 
 def _impute_using_prev_voteshare(design, covariates,
-                                 floor=.25, ceil=.75, fit_params=dict()):
-    raise NotImplementedError('recursive imputation, using previous year voteshares to impute '
-                              'current uncontested elections, is not supported at this time')
+                                 floor=.01, ceil=.99, fit_params=dict()):
+    """
+    This must iterate over each year, fit a model on that year and last 
+    year (if available), and then predict that years' uncontesteds.
+    Then, it must propagate these predictions forward. 
+    """
+    #design['vote_share__original'] = design['vote_share']
+    ## we're gonna fit models
     try:
         import statsmodels.api as sm
     except ImportError:
-        warn("Must have statsmodels installed to conduct imputation",
+        Warn("Must have statsmodels installed to conduct imputation",
              category=ImportError, stacklevel=2)
-    imputed = []
+    #use the same strategy of the uncontested variate as before
     covariates += ['vote_share__prev']
-    for yr, contest in design.groupby("year"):
+    indicator = ((design.vote_share > ceil).astype(int) +
+                 (design.vote_share < floor).astype(int) * -1)
+    design['uncontested'] = indicator
+    imputed = []
+    grouper = iter(design.groupby('year'))
+    out = []
+    imputers = []
+    last_year, last_data = next(grouper)
+    last_data = _impute_unc(last_data, covariates=covariates[:-1],
+                          floor=floor, ceil=ceil, **fit_params)
+    out.append(last_data.copy(deep=True))
+    for yr, contest in grouper:
+        if 'vote_share__prev' in contest.columns:
+            contest.drop('vote_share__prev', inplace=True, axis=1)
+        if 'vote_share__prev' in last_data.columns:
+            last_data.drop('vote_share__prev', inplace=True, axis=1)
+        assert 'vote_share__prev' not in contest.columns
+        assert len(contest.columns) == len(set(contest.columns))
+        contest = contest.merge(last_data[['district_id','vote_share']],
+                                on='district_id', suffixes=('','__prev'),
+                                how='left')
+        if contest.redist.all():
+            #if it's a redistricting cycle, impute like we don't have
+            #the previous years' voteshares
+            contest = _impute_unc(contest, covariates=covariates[:-1],
+                                  floor=floor, ceil=ceil,
+                                  **fit_params)
+            contest['vote_share__prev'] = np.nan
+            out.append(contest.copy(deep=True))
+            last_data = contest.copy(deep=True)
+            continue
+        contested = contest.query('uncontested == 0')
+        uncontested = contest[~contest.index.isin(contested.index)]
+        assert contested.shape[0] + uncontested.shape[0] == contest.shape[0]
+        Xc = sm.add_constant(contested[covariates], has_constant='add')
+        model = sm.WLS(contested.vote_share, 
+                       Xc, weights=contested.weight,
+                       missing='drop'
+                       ).fit(**fit_params)
+        imputers.append(model)
+        Xunc =  sm.add_constant(uncontested[covariates],has_constant='add') 
+        predictions = model.predict(Xunc)
+        contest.ix[uncontested.index, 'vote_share'] = predictions
+        last_data = contest.copy(deep=True)
+        out.append(contest.copy(deep=True))
+    altogether = pd.concat(out, axis=0)
+    altogether.drop('vote_share__prev', axis=1, inplace=True)
+    return altogether
+
+
         # iterate through, estimating models with only
         # mutually-contested pairs with no redistricting, then
         # predict the uncontested election. With that h, move to the next time.
-        ...
 
 _unc = dict(censor=_censor_unc,
             shift=_shift_unc,
