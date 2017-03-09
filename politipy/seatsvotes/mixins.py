@@ -230,6 +230,9 @@ class Preprocessor(object):
                     Warn('computing redistricting from years vector')
                     self.elex_frame['redist'] = gkutil.census_redistricting(pd.Series(self.elex_frame.year))
         elif method.lower() == 'ignore':
+            floor, ceil = .05, .95
+            self.elex_frame['uncontested'] = ((self.elex_frame.vote_share > ceil).astype(int) 
+                                     + (self.elex_frame.vote_share < floor).astype(int)*-1)
             return
         else:
             raise KeyError("Uncontested method not understood."
@@ -609,6 +612,12 @@ def _impute_using_prev_voteshare(design, covariates,
         contest = contest.merge(last_data[['district_id','vote_share']],
                                 on='district_id', suffixes=('','__prev'),
                                 how='left')
+        if contest.vote_share__prev.isnull().all():
+            raise GIGOError('No match between two panels found in {}. Check that'
+                       ' the district_id is correctly specified, in that it'
+                       ' identifies districts uniquely within congresses, '
+                       ' and can be used to join one year worth of data '
+                       ' to another'.format(year))
         if contest.redist.all():
             #if it's a redistricting cycle, impute like we don't have
             #the previous years' voteshares

@@ -68,3 +68,9 @@ CREATE OR REPLACE
           RETURNS double precision AS
                $$ SELECT COM_LW_5(geom); $$
          LANGUAGE SQL;
+
+CREATE OR REPLACE
+         FUNCTION COM_BoundaryAmplitude(geom Geometry)
+          RETURNS double precision AS
+               $$ SELECT ST_Perimeter(ST_Conhull(geom)) / ST_Perimeter(geom) $$
+         LANGUAGE SQL;

@@ -2,6 +2,7 @@ from sklearn import mixture as mx
 from sklearn.utils import check_random_state
 import numpy as np
 import warnings as warn
+from scipy import linalg as scla
 
 def chol_mvn(Mu, Sigma):
     """
