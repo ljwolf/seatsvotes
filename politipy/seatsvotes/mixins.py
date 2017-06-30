@@ -109,7 +109,8 @@ class Preprocessor(object):
             uncontested = dict(method='censor')
         elif isinstance(uncontested, str):
             uncontested = dict(method=uncontested)
-        if uncontested['method'].lower().startswith('imp'):
+        if (uncontested['method'].lower().startswith('imp') or 
+            uncontested['method'].lower() in ('recursive','singlepass')):
             uncontested['covariates'] = copy.deepcopy(self._covariate_cols)
         if year_column is not None:
             try:
@@ -205,7 +206,13 @@ class Preprocessor(object):
                     on other vote shares
         impute_recursive: impute vote shares from available data in each year
                           and the previous year's (possibly imputed) vote share.
+        impute_singlepass: impute vote shares from available data in each year and
+                           the previous year's vote share. Imputations are not carried forward.
         """
+        if method.lower() == 'singlepass':
+            method = 'impute_singlepass'
+        if method.lower() == 'recursive':
+            method = 'impute_recursive'
         if (method.lower().startswith('winsor') or
             method.lower().startswith('censor')):
             floor, ceil = .1,.9
@@ -224,8 +231,8 @@ class Preprocessor(object):
                                 "dataframe. Provide a year variate "
                                 "in the input dataframe to fix")
             floor, ceil = .01,.99
-            if method.endswith('recursive'):
-                # to do the recursive imputation, you need to get the redistricting vector
+            if method.endswith('recursive') or method.endswith('singlepass'):
+                # to do the stronger imputation, you need to get the redistricting vector
                 if self.elex_frame.get('redistrict') is None:
                     Warn('computing redistricting from years vector')
                     self.elex_frame['redist'] = gkutil.census_redistricting(pd.Series(self.elex_frame.year))
@@ -236,10 +243,11 @@ class Preprocessor(object):
             return
         else:
             raise KeyError("Uncontested method not understood."
-                            "\n\tRecieved: {}"
-                            "\n\tSupported: 'censor', 'winsor', "
+                            "Recieved: {}"
+                            "Supported: 'censor', 'winsor', "
                             "'shift', 'drop', 'impute',"
-                            " 'impute_recursive'".format(method))
+                            " 'impute_recursive', 'impute_singlepass',"
+                            "'singlepass'".format(method))
         #if self.elex_frame.vote_share.isnull().any():
         #    raise self._GIGO("There exists a null vote share with full "
         #                    "covariate information. In order to impute,"
@@ -256,7 +264,7 @@ class Preprocessor(object):
                                        floor=floor, ceil=ceil,
                                        **special)
 
-    def _extract_election(self, t=-1, year=None):
+    def _extract_data(self, t=-1, year=None):
         """
         get the essential statistics from the `t`th election.
 
@@ -288,6 +296,25 @@ class Preprocessor(object):
         return (obs_turnout, obs_vote_shares, obs_party_vote_shares,
                              obs_seats, obs_party_seat_shares)
 
+    def _extract_data_in_model(self, t=-1, year=None):
+        """
+        Extract an election from the models
+        """
+        if year is not None:
+            t = list(self.years).index(year)
+        obs_refparty_shares = self.models[t].model.endog[:,None]
+        obs_vote_shares = np.hstack((obs_refparty_shares, 1-obs_refparty_shares))
+        obs_seats = (obs_refparty_shares > .5).astype(int)
+        obs_turnout = self.models[t].model.weights
+        obs_party_vote_shares = np.average(obs_vote_shares, weights=obs_turnout, axis=0)
+        obs_party_seat_shares = np.mean(obs_seats, axis=0)
+
+        return (obs_turnout, obs_vote_shares, obs_party_vote_shares, 
+                obs_seats, obs_party_seat_shares)
+
+    def _extract_election(self, t=-1, year=None):
+        return self._extract_data_in_model(t=t,year=year)
+
 class Plotter(object):
     """
     Class to proide plotting capabilities to various seats-votes simulation methods.
@@ -301,8 +328,8 @@ class Plotter(object):
         raise NotImplementedError("'years' must be implemented on child class {}"
                                   "In order to be used.".format(type(self)))
 
-    def _extract_election(self, *args, **kwargs):
-        raise NotImplementedError("'_extract_election' must be implemented on child class {}"
+    def _extract_data(self, *args, **kwargs):
+        raise NotImplementedError("'_extract_data' must be implemented on child class {}"
                                   " in order to be used.".format(type(self)))
 
     def simulate_elections(self, *args, **kwargs):
@@ -340,7 +367,7 @@ class Plotter(object):
         figure and axis of the rank vote plot
         """
         from scipy.stats import rankdata
-        turnout, vshares, pvshares, *rest = self._extract_election(t=t, year=year)
+        turnout, vshares, pvshares, *rest = self._extract_data(t=t, year=year)
         vshares = vshares[:,0]
         if ax is None:
             f = plt.figure(**fig_kw)
@@ -525,7 +552,7 @@ def _winsor_unc(design, floor=.25, ceil=.75):
     except ImportError:
         Warn('Cannot import scipy.stats.mstats.winsorize, censoring instead.',
                 stacklevel=2)
-        return _censor_unc(shares, floor=floor, ceil=ceil)
+        return _censor_unc(design, floor=floor, ceil=ceil)
     # WARNING: the winsorize function here is a little counterintuitive in that
     #          it requires the ceil limit to be stated as "from the right,"
     #          so it should be less than .5, just like "floor"
@@ -542,8 +569,7 @@ def _drop_unc(design, floor=.05, ceil=.95):
     mask = (design.vote_share < floor) + (design.vote_share > (ceil))
     return design[~mask]
 
-def _impute_unc(design, covariates,
-                floor=.25, ceil=.75, fit_params=dict()):
+def _impute_unc(design, covariates,floor=.25, ceil=.75, fit_params=dict()):
     """
     This imputes the uncontested seats according
     to the covariates supplied for the model. Notably, this does not
@@ -575,8 +601,48 @@ def _impute_unc(design, covariates,
         imputed.append(contest)
     return pd.concat(imputed, axis=0)
 
-def _impute_using_prev_voteshare(design, covariates,
-                                 floor=.01, ceil=.99, fit_params=dict()):
+def _impute_singlepass(design, covariates, floor=.01, ceil = .99, fit_params=dict()):
+    """
+    Impute the uncontested vote shares using a single-pass strategy. This means that
+    a model is fit on mutually-contested elections in each year, and then elections
+    that are uncontested are predicted out of sample. Critically, imputed values 
+    are *not* propagated forward, so that imputation in time t does not affect estimates
+    for t+1.
+    """
+    try:
+        import statsmodels.api as sm
+    except ImportError:
+        Warn("Must have statsmodels installed to conduct imputation",
+                category=ImportError, stacklevel=2)
+        raise
+    indicator = ((design.vote_share > ceil).astype(int) + 
+                  (design.vote_share < floor).astype(int) * -1)
+    design['uncontested'] = indicator
+    wide = gkutil.make_designs(design,
+                               years=design.year,
+                               redistrict=design.get('redistrict'),
+                               district_id='district_id')
+    results = []
+    for i, elex in enumerate(wide):
+        uncontested = elex.query('vote_share in (0,1)')
+        contested = elex[~elex.index.isin(uncontested.index)]
+        covs = copy.deepcopy(covariates)
+        if 'vote_share__prev' in elex.columns:
+            covs.append('vote_share__prev')
+        X = contested[covs].values
+        Xc = sm.add_constant(X, has_constant='add')
+        Y = contested[['vote_share']]
+        model = sm.WLS(endog=Y, exog=Xc, weights=contested.weight,
+                       missing='drop').fit(**fit_params)
+        OOSXc = sm.add_constant(uncontested[covs].values, has_constant='add')
+        out = model.predict(OOSXc)
+        elex.ix[uncontested.index, 'vote_share'] = out
+        results.append(elex)
+    results = pd.concat(results, axis=0)
+    results.drop('vote_share__prev', axis=1, inplace=True)
+    return results
+
+def _impute_recursive(design, covariates,floor=.01, ceil=.99, fit_params=dict()):
     """
     This must iterate over each year, fit a model on that year and last 
     year (if available), and then predict that years' uncontesteds.
@@ -589,12 +655,12 @@ def _impute_using_prev_voteshare(design, covariates,
     except ImportError:
         Warn("Must have statsmodels installed to conduct imputation",
              category=ImportError, stacklevel=2)
+        raise
     #use the same strategy of the uncontested variate as before
     covariates += ['vote_share__prev']
     indicator = ((design.vote_share > ceil).astype(int) +
                  (design.vote_share < floor).astype(int) * -1)
     design['uncontested'] = indicator
-    imputed = []
     grouper = iter(design.groupby('year'))
     out = []
     imputers = []
@@ -617,7 +683,7 @@ def _impute_using_prev_voteshare(design, covariates,
                        ' the district_id is correctly specified, in that it'
                        ' identifies districts uniquely within congresses, '
                        ' and can be used to join one year worth of data '
-                       ' to another'.format(year))
+                       ' to another'.format(yr))
         if contest.redist.all():
             #if it's a redistricting cycle, impute like we don't have
             #the previous years' voteshares
@@ -658,4 +724,6 @@ _unc = dict(censor=_censor_unc,
             drop=_drop_unc,
             impute=_impute_unc,
             imp=_impute_unc,
-            impute_recursive=_impute_using_prev_voteshare)
+            impute_singlepass=_impute_singlepass,
+            singlepass=_impute_singlepass,
+            impute_recursive=_impute_recursive)

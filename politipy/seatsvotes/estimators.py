@@ -185,12 +185,14 @@ def attainment_gap(obs_turnout, obs_shares, swing_ratios, rule=ut.plurality_wins
                       callable that reduces the (N,p) array of vote counts into a vector correctly classifying which party won in each seat. The way the factor is sorted in the return vector must match the order of the columns returned by np.unique
     Returns
     --------
-    the attainment biases, which corresponds to the difference between .5 and the attainment threshold, the vote share required to gain 50% of the legislature. Is negative if a party must win more than 50% of the vote to get 50% of the legislature.
+    the attainment biases, which corresponds to the difference between .5 and the attainment threshold, the vote share projected to gain 50% of the legislature. Is negative if a party must win more than 50% of the vote to get 50% of the legislature.
 
     In addition, this returns the expected vote share for parties at 50\% seat share.
 
     NOTE: this is somewhat suspect for multiparty systems, since it's not always feasible for two parties to split at 50%, and indeed, it's often unlikely that this occurs. Linzer (2012) suggests that this only makes sense for multiparty models when the coverage of the simulations includes the party at 50%.
     """
+    obs_turnout = obs_turnout.reshape(-1,1)
+    obs_shares = obs_shares.reshape(-1,2)
     obs_votes = obs_turnout * obs_shares
     obs_grand_voteshare = obs_votes.sum(axis=0) / obs_votes.sum()
     obs_winners = rule(obs_votes).reshape(-1,1)
@@ -258,10 +260,11 @@ def directed_waste(voteshares, turnout=None):
         if ((0 <= voteshares) & (voteshares <= 100)).all():
             voteshares /= 100
         else:
+            voteshares.dump('failed.array')
             raise Exception('Vote Shares must be between 0 and 1 with no NaN')
     # waste is 
-    waste_for = ( ((voteshares > .5) * ((voteshares - .5) * turnout))
-                 +((voteshares < .5) * (voteshares * turnout))).sum()
+    waste_for = ( ((voteshares > .5) * ((voteshares - .5) * turnout)) #in excess of victory
+                 +((voteshares < .5) * (voteshares * turnout))).sum() #cast for losing candidates
     waste_against = ( ((voteshares < .5) * ((voteshares - .5) * turnout))
                      +((voteshares > .5) * (voteshares * turnout))).sum()
     return waste_against - waste_for
