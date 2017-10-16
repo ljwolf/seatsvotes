@@ -450,7 +450,7 @@ class SeatsVotes(Preprocessor, Plotter):
         return self._swing_CIs_all
 
     def estimate_median_bonus(self, n_sims=1000, t=-1, year = None,
-                              Xhyp=None, predict=False, q=[5,50,95]):
+                              Xhyp=None, predict=False, q=[5,50,95], return_all=False):
         """
         Compute the bonus afforded to the reference party using:
 
@@ -462,15 +462,18 @@ class SeatsVotes(Preprocessor, Plotter):
             t = self.years.tolist().index(year)
         sims = self.simulate_elections(n_sims=n_sims, t=t, Xhyp=Xhyp, predict=predict,
                                        target_v=.5, fix=True)
-        expected_seatshare = np.mean((sims>.5), axis=1)
+        expected_seatshare = 2*(np.mean((sims>.5), axis=1)-.5)
         point_est = np.mean(expected_seatshare)
         point_est_std = np.std(expected_seatshare)
-        return np.array([point_est - point_est_std*2, 
-                         point_est, 
-                         point_est + point_est_std*2])
+        if not return_all:
+            return np.array([point_est - point_est_std*2, 
+                             point_est, 
+                             point_est + point_est_std*2])
+        else:
+            return expected_seatshare
 
     def estimate_observed_bonus(self, n_sims=1000, t=-1, year = None,
-                                Xhyp=None, predict=False, q=[5,50,95]):
+                                Xhyp=None, predict=False, q=[5,50,95], return_all = False):
         """
         Compute the bonus afforded to the reference party by using:
 
@@ -484,10 +487,10 @@ class SeatsVotes(Preprocessor, Plotter):
         observed_ref_share = observed_pvs[0]
         return self.estimate_winners_bonus(n_sims=n_sims, 
                                            target_v = observed_ref_share,
-                                           t=t, Xhyp=Xhyp, predict=predict, q=q)
+                                           t=t, Xhyp=Xhyp, predict=predict, q=q, return_all=return_all)
 
     def estimate_winners_bonus(self, n_sims=1000, t=-1, year = None,
-                               target_v=.5, Xhyp=None, predict=False, q=[5,50,95]):
+                               target_v=.5, Xhyp=None, predict=False, q=[5,50,95], return_all = False):
         """
         Compute the bonus afforded to the reference party by using:
 
@@ -507,11 +510,14 @@ class SeatsVotes(Preprocessor, Plotter):
         complement_opponent_seats = np.mean(1 - (complement>.5), axis=1) #what your oppo wins when you do as well as they did
         point_est = np.mean(observed_expected_seats - complement_opponent_seats)
         point_est_std = np.std(observed_expected_seats - complement_opponent_seats)
-        return np.array([ point_est - 2*point_est_std, 
-                          point_est, 
-                          point_est + 2*point_est_std])
+        if not return_all:
+            return np.array([ point_est - 2*point_est_std, 
+                              point_est, 
+                              point_est + 2*point_est_std])
+        else:
+            return observed_expected_seats - complement_opponent_seats
 
-    def get_attainment_gap(self, t=-1, year=None):
+    def get_attainment_gap(self, t=-1, year=None, return_all = True):
         """
         Get the empirically-observed attainment gap, computed as the minimum vote share required to get a majority of the vote.
 
@@ -521,6 +527,8 @@ class SeatsVotes(Preprocessor, Plotter):
 
         Inherently unstable, this estimate is contingent on the estimate of the swing ratio.
         """
+        if not return_all:
+            self._GIGO('This cannot return all values, since it does not rely on simulation')
         if year is not None:
             t = list(self.years).index(year)
         try:
@@ -532,7 +540,7 @@ class SeatsVotes(Preprocessor, Plotter):
 
     def simulate_attainment_gap(self, t=-1, year=None, Xhyp=None, predict=False, q=[5,50,95],
                                  n_sim_batches=1000, sim_batch_size=None, 
-                                 best_target=None, **optimize_kws
+                                 best_target=None, return_all=False, **optimize_kws
                                  ):
         """
         Estimate the attainment gap through simulation. Given a target vote share `best_target`,
@@ -599,12 +607,15 @@ class SeatsVotes(Preprocessor, Plotter):
                  '\n\t n_batches: \t{}'
                  ''.format(retry, best_target, Xhyp is None, 
                            sim_batch_size, n_sim_batches))
-        return np.percentile(.5 - np.asarray(agaps), q=q)
+        if not return_all:
+            return np.percentile(.5 - np.asarray(agaps), q=q)
+        else:
+            return .5 - agaps
 
     def optimal_attainment_gap(self, t=-1, year = None, 
                                Xhyp=None, predict=False, q=[5,50,95],
                                n_batches= 1000, batch_size=None, 
-                               loss='mad'):
+                               loss='mad', return_all=False):
         """
         Returns the `q`th percentiles (5,50,95 by default) for (.5 - v*), where
         v* is the optimal statewide average vote share that minimizes a loss
@@ -699,9 +710,12 @@ class SeatsVotes(Preprocessor, Plotter):
                                                 bounds=(.05,.95), 
                                                 method='bounded'))
         best_xs = np.asarray([op.x for op in best_targets if op.success])
-        return np.percentile(.5 - best_xs, q=q)
+        if not return_all:
+            return np.percentile(.5 - best_xs, q=q)
+        else:
+            return .5 - best_xs
 
-    def get_efficiency_gap(self, t=-1, year=None, voteshares=None, turnout=True):
+    def get_efficiency_gap(self, t=-1, year=None, voteshares=None, turnout=True, return_all=True):
         """
         Compute the percentage difference of wasted votes in a given election
 
@@ -713,6 +727,8 @@ class SeatsVotes(Preprocessor, Plotter):
 
         Where V_{ik} is the raw vote cast in district i for party k and m_i is the total number of votes cast for all parties in district i
         """
+        if not return_all:
+            self._GIGO('This function has no ability to return all of its results, because it does not rely on simulations.')
         tvec, vshares, a, b, c = self._extract_election(t=t,year=year)
         vshares = voteshares if voteshares is not None else vshares
         if not isinstance(turnout, bool):
@@ -724,9 +740,11 @@ class SeatsVotes(Preprocessor, Plotter):
 
     def estimate_efficiency_gap(self, t=-1, year=None, 
                                 Xhyp=None, predict=False, n_sims=1000,
-                                q=[5,50,95], turnout=True):
+                                q=[5,50,95], turnout=True, return_all=False):
         """
-        Compute the efficiency gap expectation over many simulated elections. This uses the same estimator as `get_efficiency_gap`, but computes the efficiency gap over many simulated elections.
+        Compute the efficiency gap expectation over many simulated elections. 
+        This uses the same estimator as `get_efficiency_gap`, 
+        but computes the efficiency gap over many simulated elections.
         """
         tvec, *rest = self._extract_election(t=t, year=year)
         if not isinstance(turnout, bool):
@@ -736,14 +754,27 @@ class SeatsVotes(Preprocessor, Plotter):
         sims = self.simulate_elections(t=t,  Xhyp=Xhyp, predict=predict, n_sims=n_sims)
         gaps = [est.efficiency_gap(sim.reshape(-1,1), turnout=tvec)
                 for sim in sims]
-        return np.percentile(gaps, q=q)
+        if not return_all:
+            return np.percentile(gaps, q=q)
+        else:
+            return gaps
     
     def district_sensitivity(self, t=-1, Xhyp=None, predict=False, fix=False,
-                             swing=None, n_sims=1000, reestimate=False,
+                             swing=None, n_sims=1000, 
+                             batch_size=None, n_batches=None,
+                             reestimate=False, seed=2478879,
                              **jackknife_kw):
         """
         This computes the deletion simulations.
+        t, Xhyp, predict, fix, swing, n_sims are all documented in simulate_elections.
+        batch_size and n_batches refer to arguments to optimal_attainment_gap
+        jackknife_kw refer to cvtools.jackknife arguments
         """
+        np.random.seed(seed)
+        if n_batches is None:
+            n_batches = n_sims
+        if batch_size is None:
+            batch_size = n_batches // 10
         original = copy.deepcopy(self.models[t])
         leverage = cvt.leverage(original)
         resid = np.asarray(original.resid).reshape(-1,1)
@@ -769,8 +800,8 @@ class SeatsVotes(Preprocessor, Plotter):
         full_obs_egap_T = self.get_efficiency_gap(t=t, turnout=True)
         full_obs_egap_noT = self.get_efficiency_gap(t=t, turnout=False)
         full_agap = self.optimal_attainment_gap(t=t, Xhyp=Xhyp, 
-                                                batch_size=n_sims//10, 
-                                                n_batches=n_sims)
+                                                batch_size=batch_size, 
+                                                n_batches=n_batches)
 
         # Then, iterate through the deleted models and compute 
         # district sensivities in the target year (t). 
@@ -804,8 +835,8 @@ class SeatsVotes(Preprocessor, Plotter):
                                                     n_sims=n_sims,
                                                     turnout=False)
             agap = self.optimal_attainment_gap(t=t, Xhyp=del_Xhyp,
-                                               n_batches=n_sims, 
-                                               batch_size=n_sims//10)
+                                               n_batches=n_batches, 
+                                               batch_size=batch_size)
             rstats.append(np.hstack((obs_egap_t, obs_egap_not, 
                                      mbon, obon, egap_T, egap_noT, agap)))
         # Reset the model for the time period back to the original model
@@ -833,8 +864,12 @@ class SeatsVotes(Preprocessor, Plotter):
         full_ests = pd.concat((self.models[t].params.to_frame().T, full_biases), axis=1)
         full_ests['district_id'] = 'statewide'
         return pd.concat((full_ests, # stack statewide on top of  
-                          pd.concat((dnames, del_params, #district-levels
-                                     leverage, rstats), axis=1)))
+                          pd.concat((dnames.reset_index(drop=True), #district-level results
+                                     del_params,
+                                     leverage, 
+                                     rstats), 
+                                     axis=1, ignore_index=False)),
+                          ignore_index=True, axis=0)
 
     def _prefit(self, design,
                 missing='drop', uncontested='judgeit',
