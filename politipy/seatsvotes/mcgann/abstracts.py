@@ -1,5 +1,4 @@
 import numpy as np
-from warnings import warn
 import statsmodels.api as sm
 import pandas as pd
 from ..mixins import Preprocessor, AlwaysPredictPlotter
@@ -69,6 +68,7 @@ class SeatsVotes(Preprocessor, AlwaysPredictPlotter):
         unite = pd.concat([model.params for model in self.models], axis=1)
         unite.columns = self.years
         return unite
+
     def simulate_elections(self, n_sims = 10000, t=-1, year=None,
                            target_v=None, swing=0., fix=False, predict=True):
         if year is None:

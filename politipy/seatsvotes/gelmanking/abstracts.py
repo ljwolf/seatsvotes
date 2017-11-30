@@ -3,8 +3,6 @@ import copy
 import numpy as np
 import pandas as pd
 from warnings import warn as Warn
-from scipy.stats import rankdata
-from collections import OrderedDict
 from . import utils as ut
 from . import fit
 from .. import estimators as est
@@ -196,7 +194,6 @@ class SeatsVotes(Preprocessor, Plotter):
         fix         :   bool
                         flag to denote whether each simulation is pegged exactly to `target_v`, or if it's only the average of all simulations pegged to this value.
         """
-        vt_last = self.models[-1].model.endog.mean()
         if Xhyp is None:
             Xhyp = self.models[-1].model.exog
         sims = np.asarray([self._simulate_prediction(Xhyp)
@@ -204,6 +201,9 @@ class SeatsVotes(Preprocessor, Plotter):
         return sims
 
     def _simulate_prediction(self, Xhyp):
+        """
+        Make a simulation from the estimated results
+        """
         most_recent_betas = np.asarray(self.models[-1].params).reshape(-1,1)
         mean = Xhyp.dot(most_recent_betas)
         weights = 1/self.models[-1].model.weights #remember, these will be inverted
@@ -348,10 +348,8 @@ class SeatsVotes(Preprocessor, Plotter):
                                               target_v=.5, fix=False, predict=predict)
         turnout = 1/self.models[t].model.weights
         ref_voteshares = np.average(simulations, weights=turnout, axis=1)
-        grand_ref_voteshare = ref_voteshares.mean()
 
         ref_seatshares = (simulations > .5).mean(axis=1)
-        grand_ref_seatshare = ref_seatshares.mean()
 
         # chose to do this via tuples so that we can use the method elsewhere
         obs_turnout, *rest = self._extract_election(t=t)
@@ -505,7 +503,7 @@ class SeatsVotes(Preprocessor, Plotter):
         complement = self.simulate_elections(n_sims=n_sims, t=t, Xhyp=Xhyp,
                                              predict=predict, target_v=1-target_v,
                                              fix=True)
-        weights = 1/self.models[t].model.weights
+#        weights = 1/self.models[t].model.weights
         observed_expected_seats = np.mean(sims>.5, axis=1) #what you won
         complement_opponent_seats = np.mean(1 - (complement>.5), axis=1) #what your oppo wins when you do as well as they did
         point_est = np.mean(observed_expected_seats - complement_opponent_seats)
@@ -587,7 +585,6 @@ class SeatsVotes(Preprocessor, Plotter):
                                                       **optimize_kws)
         agaps = []
         weights = 1/self.models[t].model.weights
-        counter = 0
         retry = 0
         for _ in tqdm(range(n_sim_batches), 
                       desc='simulating with target={}'.format(best_target)):
@@ -670,7 +667,7 @@ class SeatsVotes(Preprocessor, Plotter):
         elif year is not None:
             t = self._years.tolist().index(year)
         try:
-                from scipy.optimize import minimize_scalar
+            from scipy.optimize import minimize_scalar
         except ImportError:
             raise ImportError('scipy.optimize is required to use this functionality')
         if isinstance(loss, str):
@@ -810,7 +807,6 @@ class SeatsVotes(Preprocessor, Plotter):
             self.models[t] = mod
             del_vs = mod.model.endog[:,None]
             del_w = mod.model.weights
-            del_X = mod.model.exog
 
             # make sure the hypothetical gets deleted as well
             del_Xhyp = np.delete(Xhyp, idx, axis=0) if Xhyp is not None else None
@@ -917,7 +913,7 @@ def _winsor_unc(design, lower=.25, upper=.75):
     except ImportError:
         Warn('Cannot import scipy.stats.mstats.winsorize, censoring instead.',
                 stacklevel=2)
-        return _censor_unc(shares, lower=lower, upper=1-upper)
+        return _censor_unc(design, lower=lower, upper=1-upper)
     # WARNING: the winsorize function here is a little counterintuitive in that
     #          it requires the upper limit to be stated as "from the right,"
     #          so it should be less than .5, just like "lower"
@@ -929,7 +925,7 @@ def _drop_unc(design, lower=.05, upper=.95):
     """
     This drops uncontested votes
     """
-    mask = (design.vote_share < outer) * (design.vote_share > (1 - outer))
+    mask = (design.vote_share > lower) * (design.vote_share < upper)
     return design[mask]
 
 _unc_dispatch = dict(censor=_censor_unc,
