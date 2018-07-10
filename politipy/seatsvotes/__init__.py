@@ -1,7 +1,7 @@
-from .gelmanking import abstracts as gelmanking
-from .linzer import abstracts as linzer
-from .bootstrap import abstracts as bootstrap
-from .moment_match import abstracts as moment_match
-from .mcgann import abstracts as mcgann
-
-#from . import data
+from .gelmanking.abstracts import SeatsVotes as SuccessiveOLS
+from .linzer.abstracts import SeatsVotes as GaussianMixture
+from .bootstrap.abstracts import SeatsVotes as Bootstrapper
+from .moment_match.abstracts import SeatsVotes as MomentMatch
+from .mcgann.abstracts import SeatsVotes as PanelOLS
+from .ecdf import Empirical_CDF as Empirical
+from .. import data
