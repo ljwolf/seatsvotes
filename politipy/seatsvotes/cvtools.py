@@ -22,6 +22,20 @@ def leverage(results):
     return (W**.5).dot(unW_H).dot(W**.5)
 
 def jackknife(candidate, full=False, **kw):
+    """
+    Estimate each leave-one-out model given the input data. 
+
+    Arguments
+    ---------
+    candidate: model
+               statsmodels regression model or a pysal regression model.
+    full     : bool
+               whether to return all reestimated models, or just the parameter 
+               estimates from the models. 
+    kw       : keywords
+               keyword arguments passed down to the resulting model estimation statement.
+               If for a statsmodels model, should be separated into fit_kw and init_kw. 
+    """
     if isinstance(candidate, __sm.base.wrapper.ResultsWrapper):
         out = _sm_jackknife(candidate, **kw)
         if not full:

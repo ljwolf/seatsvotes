@@ -1,10 +1,10 @@
 import numpy as np
 
-class SeatsVotes(object):
+class Empirical_CDF(object):
     """
-    This class mimicks the seats votes curve estimation done in the R package, `pscl`.
+    This class mimics the seats votes curve estimation done in the R package, `pscl`.
     """
-    def __init__(self, votes, k=1001, method='ecdf'):
+    def __init__(self, votes, k=1001):
         """
         Arguments
         ----------
@@ -17,24 +17,18 @@ class SeatsVotes(object):
         """
         votes = np.array(votes)
         self.support = np.linspace(-1, 1, num=k)
-        self._method = method
         self._n_elex = len(votes)
         self._original_votes = votes
-        self.votes = self._validate_votes(votes)
+        self.votes = votes
         self._n_contested = len(self.votes)
         self.seats = (self.votes > .5).astype(int)
 
         self.est_votes, self.est_seats = self._compute()
-
-    def _validate_votes(self, vector):
-        filtered = vector[~np.isnan(vector)]
-        return filtered
+        self.votes = 1 - self.votes
+        self._opp_votes, self._opp_seats = self._compute()
+        self.votes = self._original_votes
 
     def _compute(self):
-       if self._method is 'ecdf':
-           return self._jackman_cdf()
-
-    def _jackman_cdf(self):
         est_votes = []
         est_seats = []
         for i in range(len(self.support)):
@@ -47,16 +41,8 @@ class SeatsVotes(object):
         inbounds = (est_votes >= 0) & (est_votes <= 1)
         return est_votes[inbounds], est_seats[inbounds]
 
-    @property
-    def median_bias(self):
-        try:
-            return self._median_bias
-        except AttributeError:
-            hinge = np.argmin(np.abs(self.est_votes - .5))
-            bias = self.est_seats[hinge] - .5
-            self._median_bias = bias
-            return self._median_bias
-
-    def bias_at(self, share):
-        hinge = np.argmin(np.abs(self.est_votes - share))
-        return self.est_seats[hinge] - share
+    def asymmetry_at(self, share):
+        hinge = np.where(self.ecdf.est_votes >= share)[0].max()
+        ref_share = ecdf.est_seats[hinge]
+        opp_share = ecdf._opp_seats[hinge]
+        return ref_share - opp_share

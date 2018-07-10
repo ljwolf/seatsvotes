@@ -10,13 +10,20 @@ def swing_about_pivot(party_seat_shares, party_vote_shares,
     Arguments
     ----------
     party_seat_shares   :   np.ndarray (n,p)
-                            array containing the fraction of overall seats party j wins, j = 1, 2, ... , p over n replications
+                            array containing the fraction of overall seats party 
+                            j wins, j = 1, 2, ... , p over n replications
     party_vote_shares   :   np.ndarray (n,p)
-                            array containing the faction of overall votes party j wins, j = 1, 2, ..., p over n replications
+                            array containing the faction of overall votes party 
+                            j wins, j = 1, 2, ..., p over n replications
     observed_pvs        :   np.ndarray (1,p)
-                            array containing the fraction of votes a party did win. This can be a vector of the observed average party vote share, or a targeted synthetic vote breakdown.
+                            array containing the fraction of votes a party did 
+                            win. This can be a vector of the observed average 
+                            party vote share, or a targeted synthetic vote 
+                            breakdown.
     window              :   float
-                            the size of the window around the observed vote to search. Will be extended by 10% to capture rounding errors correctly
+                            the size of the window around the observed vote to 
+                            search. Will be extended by 10% to capture rounding 
+                            errors correctly
 
     Returns
     -------
@@ -43,16 +50,20 @@ def swing_slope(party_seat_shares, party_vote_shares):
     Arguments
     ---------
     party_seat_shares   :   np.ndarray (k,p)
-                            array containing the fraction of overall seats party j wins, j = 1, 2, ... , p over k replications
+                            array containing the fraction of overall seats party 
+                            j wins, j = 1, 2, ... , p over k replications
     party_vote_shares   :   np.ndarray (k,p)
-                            array containing the faction of overall votes party j wins, j = 1, 2, ..., p over k replications
+                            array containing the faction of overall votes party 
+                            j wins, j = 1, 2, ..., p over k replications
 
     Returns
     -------
     lm_slopes           :   np.ndarray (p,)
-                            the slopes of the j'th seat share predicted by the j'th vote share.
+                            the slopes of the j'th seat share predicted by the 
+                            j'th vote share.
     lm_resids           :   np.ndarray (p,)
-                            the sum of squared residuals in the regression estimated, seat_share ~ vote_share + const
+                            the sum of squared residuals in the regression 
+                            estimated, seat_share ~ vote_share + const
     """
     k,p = party_vote_shares.shape
     ### Linear model coefficient of simulated seat share on simulated vote shares
@@ -66,20 +77,28 @@ def swing_slope(party_seat_shares, party_vote_shares):
 
 def intervals(party_seat_shares, party_vote_shares, percentiles=[5, 95]):
     """
-    computes the confidence interval in the space of observed/simulated vote shares containined in party_vote_shares, party_seat_shares.
+    computes the confidence interval in the space of observed/simulated vote shares
+    contained in party_vote_shares, party_seat_shares.
 
     Arguments
     ----------
     party_seat_shares   :   np.ndarray (n,p)
-                            array containing the fraction of overall seats party j wins, j = 1, 2, ... , p over n replications
+                            array containing the fraction of overall seats party
+                             j wins, j = 1, 2, ... , p over n replications
     party_vote_shares   :   np.ndarray (n,p)
-                            array containing the faction of overall votes party j wins, j = 1, 2, ..., p over n replications
+                            array containing the faction of overall votes party 
+                            j wins, j = 1, 2, ..., p over n replications
     percentiles         :   array-like (2,)
-                            percentiles to use for the confidence intervals. should be provided in terms of 100*X%, rather than as the decimals themselves.
+                            percentiles to use for the confidence intervals. 
+                            should be provided in terms of 100*X%, rather than 
+                            as the decimals themselves.
 
     Returns
     --------
-    all_intervals, (k,3) where the first column contains each of the percentage points between the minimum and maximum party_vote_share values. The second column contains the lower percentile and the third column contains the upper precentile.
+    all_intervals, (k,3) where the first column contains each of the percentage
+    points between the minimum and maximum party_vote_share values. The second 
+    column contains the lower percentile and the third column contains the upper
+    precentile.
     """
     sim_point_range = (np.floor(party_vote_shares.min(axis=0)*100),
                        np.ceil(party_vote_shares.max(axis=0)*100) )
@@ -102,7 +121,8 @@ def intervals(party_seat_shares, party_vote_shares, percentiles=[5, 95]):
 
 def winners_bonus(obs_turnout, obs_shares, swing_ratios, rule=ut.plurality_wins):
     """
-    Compute the partisan bias between parties by extraploating from their observed vote to the median and computing the excess seat share at median vote.
+    Compute the partisan bias between parties by extrapolating from their 
+    observed vote to the median and computing the excess seat share at median vote.
 
     That is, given the slope of the seats votes curve, swing_ratio, solve:
 
@@ -117,18 +137,29 @@ def winners_bonus(obs_turnout, obs_shares, swing_ratios, rule=ut.plurality_wins)
     turnout         : np.ndarray (n,1)
                       vector containing turnouts in each district
     obs_shares      : np.ndarray (n,p)
-                      observed share of vote won by party j, j = 1, 2, ..., p in each district
+                      observed share of vote won by party j, j = 1, 2, ..., p 
+                      in each district
     swing_ratios    : np.ndarray (p,)
                       estmate of the slope seats votes curve for parties j \in p
     rule            : callable(a:np.array(N,p)) -> np.array(N,1)
-                      callable that reduces the (N,p) array of vote counts into a vector correctly classifying which party won in each seat. The way the factor is sorted in the return vector must match the order of the columns returned by np.unique
+                      callable that reduces the (N,p) array of vote counts into 
+                      a vector correctly classifying which party won in each seat.
+                      The way the factor is sorted in the return vector must match
+                      the order of the columns returned by np.unique
     Returns
     --------
-    upper triangle of bias matrix, which corresponds to the extra seats won by the jth party against the kth party, k != j, when those two parties split the vote evenly at 50\%.
+    upper triangle of bias matrix, which corresponds to the extra seats won by 
+    the jth party against the kth party, k != j, when those two parties split 
+    the vote evenly at 50\%.
 
-    In addition, this returns the expected seat share won when the party recieves 50% vote share.
+    In addition, this returns the expected seat share won when the party 
+    receives 50% vote share.
 
-    NOTE: this is somewhat suspect for multiparty systems, since it's not always feasible for two parties to split at 50%, and indeed, it's often unlikely that this occurs. Linzer (2012) suggests that this only makes sense for multiparty models when the coverage of the simulations includes the party at 50%.
+    NOTE: this is somewhat suspect for multiparty systems, since it's not always
+          feasible for two parties to split at 50%, and indeed, it's often 
+          unlikely that this occurs. Linzer (2012) suggests that this only makes
+           sense for multiparty models when the coverage of the simulations 
+           includes the party at 50%.
     """
     obs_votes = obs_turnout * obs_shares
     obs_grand_voteshare = obs_votes.sum(axis=0) / obs_votes.sum()
@@ -142,54 +173,86 @@ def winners_bonus(obs_turnout, obs_shares, swing_ratios, rule=ut.plurality_wins)
 
 def pairwise_winners_bonus(obs_turnout, obs_shares, swing_ratios, rule=ut.plurality_wins):
     """
-    Compute the pairwise partisan bias, or the difference between the seat share that a party would win if it split the vote 50/50 with another party.
+    Compute the pairwise partisan bias, or the difference between the seat share
+     that a party would win if it split the vote 50/50 with another party.
 
-    The extrapolation is documented in winners_bonus. The difference between pairwise and direct is that this examines the difference in projected seat shares each party would get at 50\% vote share.
+    The extrapolation is documented in winners_bonus. The difference between 
+    pairwise and direct is that this examines the difference in projected seat 
+    shares each party would get at 50\% vote share.
 
     Arguments
     ----------
     turnout         : np.ndarray (n,1)
                       vector containing turnouts in each district
     obs_shares      : np.ndarray (n,p)
-                      observed share of vote won by party j, j = 1, 2, ..., p in each district
+                      observed share of vote won by party j, j = 1, 2, ..., p 
+                      in each district
     swing_ratios    : np.ndarray (p,)
                       estmate of the slope seats votes curve for parties j \in p
     rule            : callable(a:np.array(N,p)) -> np.array(N,1)
-                      callable that reduces the (N,p) array of vote counts into a vector correctly classifying which party won in each seat. The way the factor is sorted in the return vector must match the order of the columns returned by np.unique
+                      callable that reduces the (N,p) array of vote counts into 
+                      a vector correctly classifying which party won in each seat.
+                      The way the factor is sorted in the return vector must match
+                      the order of the columns returned by np.unique
     Returns
     --------
-    upper triangle of bias matrix, which corresponds to the extra seats won by the jth party against the kth party, k != j, when those two parties split the vote evenly at 50\%.
+    upper triangle of bias matrix, which corresponds to the extra seats won by 
+    the jth party against the kth party, k != j, when those two parties split 
+    the vote evenly at 50\%.
 
-    In addition, this returns the expected seat share won when the party recieves 50% vote share.
+    In addition, this returns the expected seat share won when the party 
+    receives 50% vote share.
 
-    NOTE: this is somewhat suspect for multiparty systems, since it's not always feasible for two parties to split at 50%, and indeed, it's often unlikely that this occurs. Linzer (2012) suggests that this only makes sense for multiparty models when the coverage of the simulations includes the party at 50%.
+    NOTE: this is somewhat suspect for multiparty systems, since it's not
+          always feasible for two parties to split at 50%, and indeed, it's 
+          often unlikely that this occurs. Linzer (2012) suggests that this only
+          makes sense for multiparty models when the coverage of the simulations
+          includes the party at 50%.
     """
     _, extrap = winners_bonus(obs_turnout, obs_shares, swing_ratios, rule=rule)
     return np.triu(np.subtract.outer(extrap, extrap)), extrap
 
 def attainment_gap(obs_turnout, obs_shares, swing_ratios, rule=ut.plurality_wins):
     """
-    Compute the attainment bias, or the difference between the vote shares required to achieve an outright majority in the legislature and 50%.
+    Compute the attainment bias, or the difference between the vote shares 
+    required to achieve an outright majority in the legislature and 50%.
 
-    This is an alternative measure of partisan bias to the winners bonus, which measures the "extra" seats won by parties when parties win exactly 50% of the vote. In theory, this provides the relative difference in how difficult it is for a party to control the legislature, whereas the winners bonus measure indicates the party who would be favored to control the legislature if both parties were equally preferred.
+    This is an alternative measure of partisan bias to the winners bonus, which
+    measures the "extra" seats won by parties when parties win exactly 50% of
+    the vote. In theory, this provides the relative difference in how 
+    difficult it is for a party to control the legislature, whereas the
+    winners bonus measure indicates the party who would be favored to control
+    the legislature if both parties were equally preferred.
 
     Arguments
     ----------
     turnout         : np.ndarray (n,1)
                       vector containing turnouts in each district
     obs_shares      : np.ndarray (n,p)
-                      observed share of vote won by party j, j = 1, 2, ..., p in each district
+                      observed share of vote won by party j, j = 1, 2, ..., p 
+                      in each district
     swing_ratios    : np.ndarray (p,)
                       estmate of the slope seats votes curve for parties j \in p
     rule            : callable(a:np.array(N,p)) -> np.array(N,1)
-                      callable that reduces the (N,p) array of vote counts into a vector correctly classifying which party won in each seat. The way the factor is sorted in the return vector must match the order of the columns returned by np.unique
+                      callable that reduces the (N,p) array of vote counts into 
+                      a vector correctly classifying which party won in each seat.
+                      The way the factor is sorted in the return vector must match
+                      the order of the columns returned by np.unique
     Returns
     --------
-    the attainment biases, which corresponds to the difference between .5 and the attainment threshold, the vote share projected to gain 50% of the legislature. Is negative if a party must win more than 50% of the vote to get 50% of the legislature.
+    the attainment biases, which corresponds to the difference between .5 and 
+    the attainment threshold, the vote share projected to gain 50% of the 
+    legislature. Is negative if a party must win more than 50% of the vote to 
+    get 50% of the legislature.
 
-    In addition, this returns the expected vote share for parties at 50\% seat share.
+    In addition, this returns the expected vote share for parties at 50\% seat 
+    share.
 
-    NOTE: this is somewhat suspect for multiparty systems, since it's not always feasible for two parties to split at 50%, and indeed, it's often unlikely that this occurs. Linzer (2012) suggests that this only makes sense for multiparty models when the coverage of the simulations includes the party at 50%.
+    NOTE: this is somewhat suspect for multiparty systems, since it's not always
+          feasible for two parties to split at 50%, and indeed, it's often 
+          unlikely that this occurs. Linzer (2012) suggests that this only makes
+          sense for multiparty models when the coverage of the simulations 
+          includes the party at 50%.
     """
     obs_turnout = obs_turnout.reshape(-1,1)
     obs_shares = obs_shares.reshape(-1,2)
@@ -206,25 +269,39 @@ def attainment_gap(obs_turnout, obs_shares, swing_ratios, rule=ut.plurality_wins
 
 def pairwise_attainment_gap(obs_turnout, obs_shares, swing_ratios, rule=ut.plurality_wins):
     """
-    Compute the upper triangle of the pairwise attainment bias matrix, or the difference between the vote shares required to achieve an outright majority or all parties. This provides the relative difference in attainment thresholds, and is negative when the party corresponding to the row of the matrix has a lower attainment threshold than the party in the column of the matrix.
+    Compute the upper triangle of the pairwise attainment bias matrix, or the 
+    difference between the vote shares required to achieve an outright majority
+    or all parties. This provides the relative difference in attainment 
+    thresholds, and is negative when the party corresponding to the row of the
+    matrix has a lower attainment threshold than the party in the column of 
+    the matrix.
 
     Arguments
     ----------
     turnout         : np.ndarray (n,1)
                       vector containing turnouts in each district
     obs_shares      : np.ndarray (n,p)
-                      observed share of vote won by party j, j = 1, 2, ..., p in each district
+                      observed share of vote won by party j, j = 1, 2, ..., p in
+                      each district
     swing_ratios    : np.ndarray (p,)
                       estmate of the slope seats votes curve for parties j \in p
     rule            : callable(a:np.array(N,p)) -> np.array(N,1)
-                      callable that reduces the (N,p) array of vote counts into a vector correctly classifying which party won in each seat. The way the factor is sorted in the return vector must match the order of the columns returned by np.unique
+                      callable that reduces the (N,p) array of vote counts into 
+                      a vector correctly classifying which party won in each seat.
+                      The way the factor is sorted in the return vector must 
+                      match the order of the columns returned by np.unique
     Returns
     --------
-    the pairwise attainment biases, which corresponds to the difference between each party's attainment thresholds, the vote share required to gain 50% of the legislature. Is negative if a party must win *less* than another party to win control of the legislature. Thus, negative indicates bias in favor of the party, since attainment is *easier* for them than it is for another party.
+    the pairwise attainment biases, which corresponds to the difference between
+    each party's attainment thresholds, the vote share required to gain 50% of
+    the legislature. Is negative if a party must win *less* than another party
+    to win control of the legislature. Thus, negative indicates bias in favor
+    of the party, since attainment is *easier* for them than it is for another party.
 
     In addition, this returns the expected vote share for parties at 50\% seat share.
 
-    This should always be applicable, if the extrapolation to the electoral median makes sense.
+    This should always be applicable, if the extrapolation to the electoral 
+    median makes sense.
     """
     _, extrap = attainment_gap(obs_turnout, obs_shares, swing_ratios, rule=rule)
     biases = np.subtract.outer(extrap, extrap)
@@ -233,9 +310,11 @@ def pairwise_attainment_gap(obs_turnout, obs_shares, swing_ratios, rule=ut.plura
 def directed_waste(voteshares, turnout=None):
     """
     Compute the directed waste in votes over districts in a two-party system. 
-    Expresses the percentage of all votes wasted for the reference party over and above the other party. 
+    Expresses the percentage of all votes wasted for the reference party over 
+    and above the other party. 
     
-    If negative, indicates bias against the reference party, in that more votes are wasted by the reference party than by the opponent.
+    If negative, indicates bias against the reference party, in that more votes 
+    are wasted by the reference party than by the opponent.
 
     Arguments
     ----------
@@ -271,7 +350,8 @@ def directed_waste(voteshares, turnout=None):
 
 def efficiency_gap(voteshares, turnout=None):
     """
-    compute the efficiency gap, which is defined as the directed waste divided by the total votes cast in an election
+    compute the efficiency gap, which is defined as the directed waste divided 
+    by the total votes cast in an election
     """
     if turnout is None:
         sbar = (voteshares > .5).mean()

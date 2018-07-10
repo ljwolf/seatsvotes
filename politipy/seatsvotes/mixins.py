@@ -2,7 +2,7 @@ from warnings import warn as Warn
 from collections import OrderedDict
 from .gelmanking import utils as gkutil
 import numpy as np
-import copy 
+import copy
 import pandas as pd
 
 try:
@@ -16,7 +16,8 @@ except ImportError:
 class GIGOError(Exception):
     """
     You're trying to do something that will significantly harm
-    the validity of your inference.
+    the validity of your inference. 
+    This exception will tell you that. 
     """
     pass
 
@@ -28,54 +29,105 @@ class Preprocessor(object):
     """
     @classmethod
     def from_arrays(cls, voteshares,
-                       turnout,
-                       years,
-                       redistrict,
-                       district_ids,
-                       covariates = None,
-                       missing = 'drop',
-                       uncontested = None,
-                       break_on_GIGO = True
-                       ):
+                    turnout,
+                    years,
+                    redistrict,
+                    district_ids,
+                    covariates=None,
+                    missing='drop',
+                    uncontested=None,
+                    break_on_GIGO=True
+                    ):
         """
-        Everything must be:
-        1. no nan
-        2. no uncontesteds/uncontesteds are resolved to 0,1
-        3. all arrays are (nt,k), where k is the number of
-            relevant covariates for the attribute.
-        4.
+        Method mimicking default Preprocessor() construction, but
+        with more limited functionality to construct directly from arrays. 
+        Specifically, this has less input checking, so to avoid GIGO errors, 
+        all input arrays must:
+        1. have no nan observations
+        2. have no uncontested elections, or at least uncontesteds are resolved to 0,1 and assumed correct.
+        3. all arrays are long (n*t,k) where k is the number or relevant covariates for the attribute.
+
+        refer to Preprocessor for more information. 
         """
         if covariates is None:
             covariates = dict()
         frame = pd.DataFrame.from_dict(
-                                       dict(vote_share = voteshares,
-                                            turnout = turnout,
-                                            year = years,
-                                            redistrict = redistrict,
-                                            district_id = district_ids,
+                                       dict(vote_share=voteshares,
+                                            turnout=turnout,
+                                            year=years,
+                                            redistrict=redistrict,
+                                            district_id=district_ids,
                                             **covariates
                                             ))
         return cls(frame,
                    share_column='vote_share',
                    weight_column='turnout',
-                   covariates = list(covariates.keys()),
-                   years = 'year',
-                   redistrict = 'redistrict',
-                   district_id = 'district_id',
+                   covariates=list(covariates.keys()),
+                   years='year',
+                   redistrict='redistrict',
+                   district_id='district_id',
                    missing=missing,
                    uncontested=uncontested,
                    break_on_GIGO=break_on_GIGO)
 
     def __init__(self, frame,
                  share_column='vote_share',
-                 covariates = None,
+                 covariates=None,
                  weight_column=None,
-                 year_column = 'year',
-                 redistrict_column = None,
-                 district_id = 'district_id',
-                 missing = 'drop',
+                 year_column='year',
+                 redistrict_column=None,
+                 district_id='district_id',
+                 missing='drop',
                  uncontested=None,
                  break_on_GIGO=True):
+        """
+        frame               : pd.DataFrame
+                              long dataframe in which the elections data is stored.
+        share_column        : str
+                              column of dataframe for which the two-party vote shares are stored. 
+        covariates          : list of str
+                              columns in `frame` to use to predict `share_column`. 
+        weight_column       : str
+                              turnout or other weight to assign each district in computing weighted 
+                              averages for vote shares
+
+        year_column         : str
+                              name of column holding the year in which each contest occurs
+        redistrict_column   : str
+                              name of column holding information about when redistricting occurs 
+                              in the dataset. Should be a binary indicator or a boolean 
+                              (True if redistricting occurred between that row's `year` and the previous year)
+        district_id         : str
+                              name of column which contains the district's unique id (stable over years)
+        missing             : str
+                              missing policy. Can be either:
+                                    drop    :   drop entries that are missing any data
+                                    impute  :   take the mean of the column as the value in the data
+                                    ignore  :   ignore the missing values
+                                    (default: drop)
+        uncontested         : str
+                              uncontested policy. Can be either:
+                              censor  :   clip the data to a given vote share
+                              winsor  :   clip the data to a given percentage
+                              drop    :   drop uncontested elections
+                              impute  :   impute vote shares from the available data in each year
+                                          on other vote shares
+                              impute_recursive: impute vote shares from available data in each year
+                                                and the previous year's (possibly imputed) vote share.
+                              impute_singlepass: impute vote shares from available data in each year and
+                                                 the previous year's vote share. Imputations are not carried forward.
+                              (default : censor)
+
+        break_on_GIGO       : bool
+                              whether or not to break or proceed when a computation is determined 
+                              to yield meaningless but possibly non-null results. This may occur when
+                              imputation is requested but covariates are not provided, when simulations
+                              are requested for data with incorrect scope or structure, among others. 
+
+                              NOTE: this only catches a few common structural issues in imputation,
+                              simulation, and prediction. It does not guarantee that results are "valid."
+                              DO NOT change this unless you are sure you know why you need to change this. 
+        """
         super().__init__()
         if break_on_GIGO:
             self._GIGO = _raiseGIGO
@@ -243,11 +295,11 @@ class Preprocessor(object):
             return
         else:
             raise KeyError("Uncontested method not understood."
-                            "Recieved: {}"
-                            "Supported: 'censor', 'winsor', "
-                            "'shift', 'drop', 'impute',"
-                            " 'impute_recursive', 'impute_singlepass',"
-                            "'singlepass'".format(method))
+                           "Recieved: {}"
+                           "Supported: 'censor', 'winsor', "
+                           "'shift', 'drop', 'impute',"
+                           " 'impute_recursive', 'impute_singlepass',"
+                           "'singlepass'".format(method))
         #if self.elex_frame.vote_share.isnull().any():
         #    raise self._GIGO("There exists a null vote share with full "
         #                    "covariate information. In order to impute,"
@@ -408,11 +460,11 @@ class Plotter(object):
                                   ax=None, fig_kw=dict(),
                                   scatter_kw=dict(),
                                   mean_center=True, normalize=True,
-                                  silhouette = True,
+                                  silhouette=True,
                                   q=[5,50,95],
                                   band=False,
                                   env_kw=dict(), median_kw=dict(),
-                                  return_sims = False):
+                                  return_sims=False):
         """
         This plots the full distribution of rank-votes for simulated voteshares.
 
@@ -502,19 +554,19 @@ class AlwaysPredictPlotter(Plotter):
                                   ax=None, fig_kw=dict(), predict=True,
                                   scatter_kw=dict(),
                                   mean_center=True, normalize=True,
-                                  silhouette = True,
+                                  silhouette=True,
                                   q=[5,50,95],
                                   band=False,
                                   env_kw=dict(), median_kw=dict(),
-                                  return_sims = False):
+                                  return_sims=False):
         if predict is False:
             self._GIGO("Prediction should always be enabled for {}".format(self.__class__))
         return Plotter.plot_simulated_seatsvotes(**vars())
 
 class AdvantageEstimator(object):
-        def get_swing_ratio(self, n_sims=1000, t=-1,
-                                  Xhyp=None,
-                                  predict=False, use_sim_swing=True):
+    def get_swing_ratio(self, n_sims=1000, t=-1,
+                        Xhyp=None,
+                        predict=False, use_sim_swing=True):
         """
         Generic method to either compute predictive or counterfactual elections.
 
@@ -531,13 +583,21 @@ class AdvantageEstimator(object):
         Xhyp        :   (n,k)
                         artificial data to use in the simulation
         target_v    :   float
-                        target mean vote share to peg the simulations to. Will ensure that the average of all simulations conducted is this value.
+                        target mean vote share to peg the simulations to. Will 
+                        ensure that the average of all simulations conducted is
+                        this value.
         fix         :   bool
-                        flag to denote whether each simulation is pegged exactly to `target_v`, or if it's only the average of all simulations pegged to this value.
+                        flag to denote whether each simulation is pegged exactly
+                         to `target_v`, or if it's only the average of all 
+                         simulations pegged to this value.
         predict     :   bool
-                        whether or not to use the predictive distribution or the counterfactual distribution
+                        whether or not to use the predictive distribution or the
+                         counterfactual distribution
         use_sim_swing:  bool
-                        whether to use the instantaneous change observed in simulations around the observed seatshare/voteshare point, or to use the aggregate slope of the seats-votes curve over all simulations as the swing ratio
+                        whether to use the instantaneous change observed in 
+                        simulations around the observed seatshare/voteshare 
+                        point, or to use the aggregate slope of the seats-votes
+                         curve over all simulations as the swing ratio
         """
         ### Simulated elections
         simulations = self.simulate_elections(n_sims=n_sims, t=t,
@@ -655,7 +715,7 @@ class AdvantageEstimator(object):
         if year is not None:
             t = self.years.tolist().index(year)
         sims = self.simulate_elections(n_sims=n_sims, t=t, Xhyp=Xhyp, predict=predict,
-                                   target_v = target_v, fix=True)
+                                       target_v=target_v, fix=True)
         complement = self.simulate_elections(n_sims=n_sims, t=t, Xhyp=Xhyp,
                                              predict=predict, target_v=1-target_v,
                                              fix=True)
@@ -768,7 +828,7 @@ class AdvantageEstimator(object):
         else:
             return .5 - agaps
 
-    def optimal_attainment_gap(self, t=-1, year = None, 
+    def optimal_attainment_gap(self, t=-1, year=None, 
                                Xhyp=None, predict=False, q=[5,50,95],
                                n_batches= 1000, batch_size=None, 
                                loss='mad', return_all=False):
@@ -974,7 +1034,7 @@ class AdvantageEstimator(object):
 
             # make sure the hypothetical gets deleted as well
             del_Xhyp = np.delete(Xhyp, idx, axis=0) if Xhyp is not None else None
-            
+
             # Compute various bias measures:
             # the observed efficiency gap (with/without turnout)
             obs_egap_t = est.efficiency_gap(del_vs, del_w)
@@ -1004,15 +1064,15 @@ class AdvantageEstimator(object):
 
         # prepare to ship everything by building columns & dataframe
         rstats = np.vstack(rstats)
-        cols = ( ['EGap_eT', 'EGap_enoT']
-                + ['{}_{}'.format(name,ptile) 
-                    for name in ['MBonus', 'OBonus', 'EGap_T', 'EGap_noT', 'AGap']
-                    for ptile in (5,50,95)] )
+        cols = (['EGap_eT', 'EGap_enoT']
+                + ['{}_{}'.format(name, ptile)
+                for name in ['MBonus', 'OBonus', 'EGap_T', 'EGap_noT', 'AGap']
+                for ptile in (5, 50, 95)])
         rstats = pd.DataFrame(rstats, columns=cols)
 
         # and the leverage
         leverage = pd.DataFrame(np.hstack((np.diag(leverage).reshape(-1,1), 
-                                           resid)),           
+                                           resid)),
                                 columns=['leverage', 'residual'])
         dnames = self._designs[t].district_id
 
@@ -1023,17 +1083,18 @@ class AdvantageEstimator(object):
         full_biases.columns = cols
         full_ests = pd.concat((self.models[t].params.to_frame().T, full_biases), axis=1)
         full_ests['district_id'] = 'statewide'
-        return pd.concat((full_ests, # stack statewide on top of  
-                          pd.concat((dnames.reset_index(drop=True), #district-level results
+        return pd.concat((full_ests, # stack statewide on top of
+                          pd.concat((dnames.reset_index(drop=True), # district-level results
                                      del_params,
-                                     leverage, 
-                                     rstats), 
+                                     leverage,
+                                     rstats),
                                      axis=1, ignore_index=False)),
                           ignore_index=True, axis=0)
 
 ###################################
 # Dispatch Table for Uncontesteds #
 ###################################
+
 
 def _censor_unc(design, floor=.25, ceil=.75):
     """
@@ -1045,6 +1106,7 @@ def _censor_unc(design, floor=.25, ceil=.75):
     design['vote_share'] = np.clip(design.vote_share,
                                    a_min=floor, a_max=ceil)
     return design
+
 
 def _shift_unc(design, floor=.05, ceil=.95, lower_to=.25, ceil_to=.75):
     """
@@ -1060,6 +1122,7 @@ def _shift_unc(design, floor=.05, ceil=.95, lower_to=.25, ceil_to=.75):
     design.ix[ceils, 'vote_share'] = ceil_to
     return design
 
+
 def _winsor_unc(design, floor=.25, ceil=.75):
     """
     This winsorizes vote shares to a given percentile.
@@ -1071,7 +1134,7 @@ def _winsor_unc(design, floor=.25, ceil=.75):
         from scipy.stats.mstats import winsorize
     except ImportError:
         Warn('Cannot import scipy.stats.mstats.winsorize, censoring instead.',
-                stacklevel=2)
+             stacklevel=2)
         return _censor_unc(design, floor=floor, ceil=ceil)
     # WARNING: the winsorize function here is a little counterintuitive in that
     #          it requires the ceil limit to be stated as "from the right,"
@@ -1079,6 +1142,7 @@ def _winsor_unc(design, floor=.25, ceil=.75):
     design['vote_share'] = np.asarray(winsorize(design.vote_share,
                                                 limits=(floor, 1-ceil)))
     return design
+
 
 def _drop_unc(design, floor=.05, ceil=.95):
     """
@@ -1088,6 +1152,7 @@ def _drop_unc(design, floor=.05, ceil=.95):
     design['uncontested'] = 0
     mask = (design.vote_share < floor) + (design.vote_share > (ceil))
     return design[~mask]
+
 
 def _impute_unc(design, covariates,floor=.25, ceil=.75, fit_params=dict()):
     """
@@ -1186,7 +1251,7 @@ def _impute_recursive(design, covariates,floor=.01, ceil=.99, fit_params=dict())
     imputers = []
     last_year, last_data = next(grouper)
     last_data = _impute_unc(last_data, covariates=covariates[:-1],
-                          floor=floor, ceil=ceil, **fit_params)
+                            floor=floor, ceil=ceil, **fit_params)
     out.append(last_data.copy(deep=True))
     for yr, contest in grouper:
         if 'vote_share__prev' in contest.columns:
@@ -1200,10 +1265,10 @@ def _impute_recursive(design, covariates,floor=.01, ceil=.99, fit_params=dict())
                                 how='left')
         if contest.vote_share__prev.isnull().all():
             raise GIGOError('No match between two panels found in {}. Check that'
-                       ' the district_id is correctly specified, in that it'
-                       ' identifies districts uniquely within congresses, '
-                       ' and can be used to join one year worth of data '
-                       ' to another'.format(yr))
+                            ' the district_id is correctly specified, in that it'
+                            ' identifies districts uniquely within congresses, '
+                            ' and can be used to join one year worth of data '
+                            ' to another'.format(yr))
         if contest.redist.all():
             #if it's a redistricting cycle, impute like we don't have
             #the previous years' voteshares
@@ -1233,9 +1298,9 @@ def _impute_recursive(design, covariates,floor=.01, ceil=.99, fit_params=dict())
     return altogether
 
 
-        # iterate through, estimating models with only
-        # mutually-contested pairs with no redistricting, then
-        # predict the uncontested election. With that h, move to the next time.
+# iterate through, estimating models with only
+# mutually-contested pairs with no redistricting, then
+# predict the uncontested election. With that h, move to the next time.
 
 _unc = dict(censor=_censor_unc,
             shift=_shift_unc,
