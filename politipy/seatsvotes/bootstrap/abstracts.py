@@ -82,4 +82,3 @@ class SeatsVotes(Preprocessor, AlwaysPredictPlotter):
                                       replace=True, p=pweights)
         sim_h = target_h.values[None,:] + sim_swings
         return sim_h
-

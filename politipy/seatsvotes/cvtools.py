@@ -49,7 +49,8 @@ def jackknife(candidate, full=False, **kw):
 
 def _sm_jackknife(results, init_kw=dict(), fit_kw=dict()):
     """
-    Jackknife the results object, meaning the model is reestimated with a single observation left out each time.
+    Jackknife the results object, meaning the model is 
+    re-estimated with a single observation left out each time.
     """
     endog, exog = results.model.endog, results.model.exog
     if isinstance(results.model, sm.WLS):

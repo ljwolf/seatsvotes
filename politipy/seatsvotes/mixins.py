@@ -564,6 +564,16 @@ class AlwaysPredictPlotter(Plotter):
         return Plotter.plot_simulated_seatsvotes(**vars())
 
 class AdvantageEstimator(object):
+
+    @staticmethod
+    def _do_statistic(sims, *additional_parameters, **named_params):
+        # do advantage algorithm using simulations & knowns explicitly provided
+        return
+
+    def statistic(self, *additional_parameters, sim_kws={}, stat_kws={}):
+        sims = self.simulate(sim_kws)
+        self._do_statistic(self, *additional_parameters, stat_kws)
+
     def get_swing_ratio(self, n_sims=1000, t=-1,
                         Xhyp=None,
                         predict=False, use_sim_swing=True):

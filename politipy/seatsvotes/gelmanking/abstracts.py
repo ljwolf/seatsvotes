@@ -54,13 +54,13 @@ class SeatsVotes(Preprocessor, Plotter):
                                         these are the percentiles to move the uncontesteds to.
         """
         super().__init__(elex_frame, 
-                              covariates = covariate_columns, 
-                              weight_column=weight_column, 
-                              share_column=share_column,
-                              year_column=year_column,
-                              redistrict_column = redistrict_column, 
-                              district_id=district_id,
-                              missing=missing, uncontested=uncontested)
+                         covariates = covariate_columns, 
+                         weight_column=weight_column, 
+                         share_column=share_column,
+                         year_column=year_column,
+                         redistrict_column = redistrict_column, 
+                         district_id=district_id,
+                         missing=missing, uncontested=uncontested)
         self._years = np.sort(self.long.year.unique())
         assert all([elex.year.unique() == year 
                     for year,elex in zip(self.years, self.wide)]), "Years mismatch with designs in object.wide"
@@ -343,6 +343,7 @@ class SeatsVotes(Preprocessor, Plotter):
                         whether to use the instantaneous change observed in simulations around the observed seatshare/voteshare point, or to use the aggregate slope of the seats-votes curve over all simulations as the swing ratio
         """
         ### Simulated elections
+        ######### BREAKOUT
         simulations = self.simulate_elections(n_sims=n_sims, t=t,
                                               swing=None, Xhyp=Xhyp,
                                               target_v=.5, fix=False, predict=predict)
@@ -460,6 +461,9 @@ class SeatsVotes(Preprocessor, Plotter):
             t = self.years.tolist().index(year)
         sims = self.simulate_elections(n_sims=n_sims, t=t, Xhyp=Xhyp, predict=predict,
                                        target_v=.5, fix=True)
+
+        ####### BREAKOUT
+
         expected_seatshare = 2*(np.mean((sims>.5), axis=1)-.5)
         point_est = np.mean(expected_seatshare)
         point_est_std = np.std(expected_seatshare)
@@ -504,6 +508,9 @@ class SeatsVotes(Preprocessor, Plotter):
                                              predict=predict, target_v=1-target_v,
                                              fix=True)
 #        weights = 1/self.models[t].model.weights
+
+        #### BREAKOUT
+
         observed_expected_seats = np.mean(sims>.5, axis=1) #what you won
         complement_opponent_seats = np.mean(1 - (complement>.5), axis=1) #what your oppo wins when you do as well as they did
         point_est = np.mean(observed_expected_seats - complement_opponent_seats)
@@ -532,6 +539,7 @@ class SeatsVotes(Preprocessor, Plotter):
         try:
             return self._attainment_gap[t]
         except AttributeError:
+            ###### BREAKOUT
             turnout, voteshare, *_ = self._extract_election(t)
             sr = self.get_swing_ratio(t=t)
             return est.attainment_gap(turnout, voteshare, sr)[0][0]
@@ -573,6 +581,7 @@ class SeatsVotes(Preprocessor, Plotter):
                         passed to self.optimal_attainment_gap if no target 
                         is provided. 
         """
+        ############ BREAKOUT
         if year is None:
             year = self._years[t]
         elif year is not None:
@@ -670,6 +679,8 @@ class SeatsVotes(Preprocessor, Plotter):
             from scipy.optimize import minimize_scalar
         except ImportError:
             raise ImportError('scipy.optimize is required to use this functionality')
+
+        ##########BREAKOUT
         if isinstance(loss, str):
             if loss.lower() == 'mad':
                 def seatgap(target):
@@ -749,6 +760,7 @@ class SeatsVotes(Preprocessor, Plotter):
         elif not turnout:
             tvec = None
         sims = self.simulate_elections(t=t,  Xhyp=Xhyp, predict=predict, n_sims=n_sims)
+        ######## BREAKOUT
         gaps = [est.efficiency_gap(sim.reshape(-1,1), turnout=tvec)
                 for sim in sims]
         if not return_all:
@@ -767,6 +779,7 @@ class SeatsVotes(Preprocessor, Plotter):
         batch_size and n_batches refer to arguments to optimal_attainment_gap
         jackknife_kw refer to cvtools.jackknife arguments
         """
+        ############ BREAKOUT
         np.random.seed(seed)
         if n_batches is None:
             n_batches = n_sims

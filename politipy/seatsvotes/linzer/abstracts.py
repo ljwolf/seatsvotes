@@ -7,8 +7,14 @@ import pandas as pd
 import copy
 from warnings import warn as Warn
 
-class SeatsVotes(object):
-    def __init__(self, elex_frame, holdout=None, threshold=.95, **kws):
+class SeatsVotes(object): # should inherit from preprocessor
+    def __init__(self, elex_frame, 
+                 holdout=None, threshold=.95, 
+                 share_pattern='_share',
+                 vote_col='votes',
+                 turnout_col='turnout',
+                 year_col='year',
+                 **kws):
         """
         Construct a Seats-Votes object for a given election.
 
@@ -19,8 +25,8 @@ class SeatsVotes(object):
         holdout     :   string
         kws         :   dict of keyword arguments
         """
-        share_frame = elex_frame.iloc[:,1:]
-        turnout = elex_frame.iloc[:,0].to_frame()
+        share_frame = elex_frame.filter(like=share_pattern)
+        turnout = elex_frame.get(turnout_col)
         if threshold < .5:
             Warn('Threshold is an upper, not lower bound. Converting to upper bound.')
             threshold = 1 - threshold
@@ -31,8 +37,9 @@ class SeatsVotes(object):
         else:
             self._holdout_idx = list(elex_frame.columns).index(holdout)
         self._data = elex_frame
-        self._vote_col = elex_frame.columns[0]
-        self._share_cols = elex_frame.columns[1:]
+        self._vote_col = 'votes'
+        self._share_cols = share_frame.columns.tolist()
+        self._turnout_col = turnout_col
         self.turnout = turnout
         self.shares = share_frame
         self.N, self.P = share_frame.shape
@@ -174,7 +181,11 @@ class SeatsVotes(object):
         """
         if not self._has_been_fit:
             raise Exception('Model must be fit first. Call `SeatsVotes.fit`')
-        out_df = np.asarray([self.sample(self.N) for _ in range(n_sims)])
+        out_df = (pd.DataFrame(self.sample(self.N),
+                               columns=[self._turnout_col, *self._share_cols])
+                  for _ in range(n_sims))
+        out_df = (df.assign(run = i) for i,df in enumerate(out_df))
+        out_df = pd.concat(out_df, axis=0)
         return out_df
 
     def compute_swing_ratio(self, n_sims=1000, rule=ut.plurality_wins,
