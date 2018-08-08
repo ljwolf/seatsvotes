@@ -198,8 +198,7 @@ class Preprocessor(object):
                             district_id='district_id')
         self.long = pd.concat(self.wide, axis=0)
 
-    @staticmethod
-    def _impute_turnout_from_voteshare_and_state(df, turnout_col='turnout',
+    def _impute_turnout_from_voteshare_and_state(self, df, turnout_col='turnout',
                                                  state_col='state'):
         """
         Impute turnout from the voteshare and state category. This specifies:
@@ -210,12 +209,12 @@ class Preprocessor(object):
         if missing_data.any():
             missing_cols = df.columns[missing_data]
             self._GIGO("Missing data in imputation of turnout "
-                       "for column: {}".format(missing_data))
+                       "for column: {}".format(missing_cols))
         import statsmodels.formula.api as smf, statsmodels.api as sm
         model = smf.OLS('turnout ~ vote_share + I(vote_share**2) + C(state, Treatment)',
                         data=df).fit()
         incomplete_ix = complete[complete[turnout_col].isnull()].index
-        imcomplete_X = df.ix[incomplete, [turnout_col, state_col]]
+        incomplete_X = df.ix[incomplete_ix, [turnout_col, state_col]]
         preds = model.predict(sm.add_constant(incomplete_X))
         df.ix[turnout_col, incomplete_ix] = preds
         return df[turnout_col]
@@ -242,7 +241,7 @@ class Preprocessor(object):
                            "".format(method))
         any_in_column = self.elex_frame[targets].isnull().any(axis=0)
         if any_in_column.any():
-            still_missing = self.elex_frame.columns[any_in_columns]
+            still_missing = self.elex_frame.columns[any_in_column]
             self._GIGO('After resolving missing data using {}, the following columns '
                        'still have missing data: {}'.format(still_missing))
 
