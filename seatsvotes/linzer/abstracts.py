@@ -1,5 +1,5 @@
 from . import fit as _fit, preprocessing as prep
-from .. import estimators as est
+from . import estimators as est
 from .. import utils as ut
 from sklearn import mixture as mix
 import numpy as np
@@ -11,7 +11,6 @@ class SeatsVotes(object): # should inherit from preprocessor
     def __init__(self, elex_frame, 
                  holdout=None, threshold=.95, 
                  share_pattern='_share',
-                 vote_col='votes',
                  turnout_col='turnout',
                  year_col='year',
                  **kws):
@@ -37,7 +36,6 @@ class SeatsVotes(object): # should inherit from preprocessor
         else:
             self._holdout_idx = list(elex_frame.columns).index(holdout)
         self._data = elex_frame
-        self._vote_col = 'votes'
         self._share_cols = share_frame.columns.tolist()
         self._turnout_col = turnout_col
         self.turnout = turnout
