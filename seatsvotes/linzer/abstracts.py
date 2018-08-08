@@ -1,5 +1,5 @@
 from . import fit as _fit, preprocessing as prep
-from . import estimators as est
+from .. import estimators as est
 from .. import utils as ut
 from sklearn import mixture as mix
 import numpy as np
