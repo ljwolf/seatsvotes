@@ -11,6 +11,7 @@ from ..mixins import Preprocessor, Plotter
 from tqdm import tqdm
 
 class SeatsVotes(Preprocessor, Plotter):
+    _twoparty = True
     def __init__(self, elex_frame, covariate_columns,
                  weight_column=None,
                  share_column='vote_share',
@@ -343,19 +344,21 @@ class SeatsVotes(Preprocessor, Plotter):
                         whether to use the instantaneous change observed in simulations around the observed seatshare/voteshare point, or to use the aggregate slope of the seats-votes curve over all simulations as the swing ratio
         """
         ### Simulated elections
-        ######### BREAKOUT
+
+        obs_turnout, *rest = self._extract_election(t=t)
+        obs_voteshares, obs_party_voteshares, *rest = rest
+        obs_seats, obs_party_seatshares = rest
+
         simulations = self.simulate_elections(n_sims=n_sims, t=t,
                                               swing=None, Xhyp=Xhyp,
-                                              target_v=.5, fix=False, predict=predict)
+                                              target_v=obs_party_voteshares, fix=False, predict=predict)
         turnout = 1/self.models[t].model.weights
         ref_voteshares = np.average(simulations, weights=turnout, axis=1)
 
         ref_seatshares = (simulations > .5).mean(axis=1)
 
         # chose to do this via tuples so that we can use the method elsewhere
-        obs_turnout, *rest = self._extract_election(t=t)
-        obs_voteshares, obs_party_voteshares, *rest = rest
-        obs_seats, obs_party_seatshares = rest
+
 
         ## Swing Around Median
         party_voteshares = np.hstack((ref_voteshares.reshape(-1,1),
@@ -492,7 +495,7 @@ class SeatsVotes(Preprocessor, Plotter):
                                            t=t, Xhyp=Xhyp, predict=predict, q=q, return_all=return_all)
 
     def estimate_winners_bonus(self, n_sims=1000, t=-1, year = None,
-                               target_v=.5, Xhyp=None, predict=False, q=[5,50,95], return_all = False):
+                               target_v=None, Xhyp=None, predict=False, q=[5,50,95], return_all = False):
         """
         Compute the bonus afforded to the reference party by using:
 
@@ -508,8 +511,6 @@ class SeatsVotes(Preprocessor, Plotter):
                                              predict=predict, target_v=1-target_v,
                                              fix=True)
 #        weights = 1/self.models[t].model.weights
-
-        #### BREAKOUT
 
         observed_expected_seats = np.mean(sims>.5, axis=1) #what you won
         complement_opponent_seats = np.mean(1 - (complement>.5), axis=1) #what your oppo wins when you do as well as they did

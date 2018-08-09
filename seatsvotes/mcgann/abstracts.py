@@ -11,6 +11,7 @@ def _year_to_decade(yr):
     return (yr - 2) - (yr - 2) % 10
 
 class SeatsVotes(Preprocessor, AlwaysPredictPlotter):
+    _twoparty = True
     def __init__(self, frame,
                  share_column='vote_share',
                  group_by='state',
@@ -93,4 +94,4 @@ class SeatsVotes(Preprocessor, AlwaysPredictPlotter):
         sims = np.random.normal(expectation, sigma, size=(n_sims, X.shape[0]))
         if fix:
             sims -= sims.mean(axis=0)
-        return sims
+        return np.clip(sims,0,1)

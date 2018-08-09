@@ -3,6 +3,7 @@ from ..mixins import Preprocessor, AlwaysPredictPlotter
 from warnings import warn
 
 class SeatsVotes(Preprocessor, AlwaysPredictPlotter):
+    _twoparty = True
     def __init__(self, elex_frame, covariate_columns=None,
                  weight_column=None,
                  share_column='vote_share',
@@ -81,4 +82,4 @@ class SeatsVotes(Preprocessor, AlwaysPredictPlotter):
         sim_swings = np.random.choice(obs_swings.dropna() + swing, (n_sims, n_dists), 
                                       replace=True, p=pweights)
         sim_h = target_h.values[None,:] + sim_swings
-        return sim_h
+        return np.clip(sim_h, 0,1)
