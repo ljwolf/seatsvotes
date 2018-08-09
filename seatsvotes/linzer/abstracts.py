@@ -30,7 +30,7 @@ class SeatsVotes(object): # should inherit from preprocessor
             Warn('Threshold is an upper, not lower bound. Converting to upper bound.')
             threshold = 1 - threshold
         if holdout is None:
-            holdout = elex_frame.columns[1]
+            holdout = share_frame.columns[1]
         if isinstance(holdout, int):
             self._holdout_idx = holdout
         else:
@@ -41,6 +41,7 @@ class SeatsVotes(object): # should inherit from preprocessor
         self.turnout = turnout
         self.shares = share_frame
         self.N, self.P = share_frame.shape
+        self._twoparty = self.P <= 2
         filtered = prep.filter_uncontested(self.shares, threshold)
         self.uncontested = elex_frame.drop(filtered.index, inplace=False)
         self.contested = elex_frame.drop(self.uncontested.index, inplace=False)
@@ -110,6 +111,14 @@ class SeatsVotes(object): # should inherit from preprocessor
         shares      :   bool
                         flag governing whether to have the sampler return
                         vote shares shares or log odds
+        return_shares:  bool
+                        flag governing whether to return the log odds contrasts
+                        for parties, or to return vote shares directly.
+
+        Returns
+        -------
+        (n_samples,p_parties) array, where p_parties is either 1, matching the 
+        two-party omitted category pattern, or >2 for multiparty elections. 
         """
         if not self._has_been_fit:
             raise Exception('Model must be fit first. Call `SeatsVotes.fit`')
@@ -141,6 +150,11 @@ class SeatsVotes(object): # should inherit from preprocessor
             out = np.vstack((uncontesteds, contesteds))
         else:
             out = contesteds
+        if self._twoparty:
+            # state two-party races as omitted-category simulations, 
+            # just like the rest of the library
+            out = out[:,:-1]
+            assert out.shape[1] == 2
         return out
 
     def draw_uncontesteds(self, n_samples=1):
@@ -164,7 +178,9 @@ class SeatsVotes(object): # should inherit from preprocessor
         out = np.hstack((np.zeros((n_samples, 1)), out))
         return pd.DataFrame(out, columns=self._data.columns)
 
-    def simulate_elections(self, n_sims = 1000):
+    def simulate_elections(self, n_sims = 1000, swing=0, 
+                           target_v=None,
+                           fix=False):
         """
         Construct a new set of `n_elections` elections.
 
@@ -175,119 +191,46 @@ class SeatsVotes(object): # should inherit from preprocessor
 
         Returns
         -------
-        An array that is (n_elex, N,P)
+        A long-form dataframe containing (n_observations * n_sims x 1+n_parties columns)
+        or, two (n_sims x n_observations) arrays containing the turnout & vote shares
+        in a two-party simulation
         """
+        if ((swing != 0) or (target_v is not None)) and not self._twoparty:
+            raise NotImplementedError("Multiparty swing not yet implemented.")
         if not self._has_been_fit:
             raise Exception('Model must be fit first. Call `SeatsVotes.fit`')
-        out_df = (pd.DataFrame(self.sample(self.N),
-                               columns=[self._turnout_col, *self._share_cols])
+        out_df = (pd.DataFrame(self.sample(self.N))
                   for _ in range(n_sims))
         out_df = (df.assign(run = i) for i,df in enumerate(out_df))
         out_df = pd.concat(out_df, axis=0)
+        if self._twoparty:
+            if target_v is not None and swing != 0:
+                raise ValueError("Provide only target_v or swing, not both.")
+            if target_v is not None:
+                swing = target_v - np.average(self.shares.iloc[:,0].values,
+                                              self.turnout)
+            turnouts = out_df.iloc[:,0].values.reshape(n_sims, self.N)
+            votes = out_df.iloc[:,1].values.reshape(n_sims, self.N)
+            return np.clip(votes + swing, 0,1), turnouts
         return out_df
 
-    def compute_swing_ratio(self, n_sims=1000, rule=ut.plurality_wins,
-                            percentiles=[5,95], use_sim_swing=True):
-        """
-        Compute the swing ratio, or the slope of the seats-votes curve, in a small window around the observed points.
-        """
-        sim_elex = self.simulate_elections(n_sims)
-        summary = ut.summarize_election(sim_elex, rule=rule)
-        raw_votes, party_voteshares, party_seats, party_seatshares = summary
-        observed_elex = np.hstack((self.turnout.values, self.shares.values))
-        observed_summary = ut.summarize_election(observed_elex)
-        obs_votes, obs_party_voteshares, obs_party_seats, obs_party_seatshares = observed_summary
-        swing_emp = est.swing_about_pivot(party_seatshares, party_voteshares,
-                                            obs_party_voteshares)
-        conints = est.intervals(party_seatshares, party_voteshares, percentiles=percentiles)
-        swing_lm, swing_lm_resid = est.swing_slope(party_seatshares, party_voteshares)
-
-        self._swing_ratios_sim = swing_emp
-        self._swing_ratios_lm = swing_lm
-        self._swing_CIs = conints
-        self._use_sim_swing = use_sim_swing
-
-        return swing_emp if use_sim_swing else swing_lm
-
-    @property
-    def swing_ratios(self):
-        if not hasattr(self, '_swing_ratios_sim'):
-            self.compute_swing_ratio()
-        if self._use_sim_swing:
-            return self._swing_ratios_sim
+    def _extract_election(self, *args, **kw):
+        """ extract empirical elections from linzer model"""
+        if self._twoparty:
+            obs_vote_shares = self.share_frame.iloc[:,0].values
+            obs_party_vote_shares = np.average(obs_vote_shares, 
+                                               weight=self.turnout)
+            obs_seats = (obs_vote_shares > .5).astype(int)
+            obs_party_seat_shares = obs_seats.mean()
         else:
-            return self._swing_ratios_lm
+            obs_vote_shares = self.share_frame.values
+            obs_party_vote_shares = np.average(obs_vote_shares, 
+                                               weight=self.turnout,
+                                               axis=0)
+            wins = obs_vote_shares.argmax(axis=1)
+            _, n_wins np.unique(wins, return_counts=True)
+            obs_party_seat_shares = n_wins / n_wins.sum()
 
-    @property
-    def swing_ratios_lm(self):
-        if not hasattr(self, '_swing_ratios_lm'):
-            self.compute_swing_ratio()
-        return self._swing_ratios_lm
-
-    @property
-    def swing_CIs(self):
-        if not hasattr(self._swing_intervals):
-            self.compute_swing_ratio()
-        return self._swing_CIs
-
-    @property
-    def winners_bonus(self):
-        """
-        The excess share of seats won by the party when it attains exactly 50% vote share, as suggested in King & Browning (1989). If negative, this indicates that the party would win fewer than 50% of the seats were they to win 50% of the votes.
-
-        For example, if the winners bonus is .0221, then the party who has that bonus gains 52.21% of the seats in the legislature when it wins 50% of the vote.
-
-        NOTE: this is pretty useless for multiparty systems.
-        """
-        if not hasattr(self, 'swing_ratios'):
-            self.compute_swing_ratio()
-        if not hasattr(self, '_winners_bonus'):
-            self._winners_bonus, extrap = est.winners_bonus(self.turnout.values,
-                                                           self.shares.values,
-                                                           self.swing_ratios)
-        return self._winners_bonus
-
-    @property
-    def pairwise_winners_bonus(self):
-        """
-        The the difference in winners bonuses for all parties when each party recieves a vote share of 50%.
-
-        For example, if the pairwise winners bonus matrix is [[0,-.12],[0,0]], then party 1 wins 12% fewer seats than party 2 when they both win 50% of the votes. This is not necessarily the same as the winners bonus in two party systems, since the seats-votes curve can be asymmetric.
-        """
-        if not hasattr(self, 'swing_ratios'):
-            self.compute_swing_ratio()
-        if not hasattr(self, '_pairwise_winners_bonus'):
-            self._pairwise_winners_bonus, _ = est.pairwise_winners_bonus(self.turnout.values,
-                                                           self.shares.values,
-                                                           self.swing_ratios)
-        return self._pairwise_winners_bonus
-
-    @property
-    def attainment_bias(self):
-        """
-        The vote share below 50% that a party must win in order to win 50% of the seats in a legislature. If positive, the party must win more than 50% of the vote to win an outright majority in the legislature. This is the "mirror" or complement of the winners bonus.
-
-        For example, if the attainment bias is -.091, then a party only needs to win 40.9% of the votes to win 50% of the seats in the legislature. If it were .023, the party would need to win 52.3% of the votes to win 50% of the seats in the legislature.
-        """
-        if not hasattr(self, 'swing_ratios'):
-            self.compute_swing_ratio()
-        if not hasattr(self, '_pairwise_winners_bonus'):
-            self._attainment_bias, _ = est.attainment_bias(self.turnout.values,
-                                                           self.shares.values,
-                                                           self.swing_ratios)
-        return self._attainment_bias
-
-    @property
-    def pairwise_attainment_bias(self):
-        """
-        The differences in vote shares required to win a majority of the legislature for all parties.
-
-        For example, if the attainment bias matrix is [[0,-.12],[0,0]], then party 1 requires 12% fewer votes than party 2 in order to win a majority of the seats in the legislature. This is not necessarily the same as the attainment bias in two party systems, since the seats-votes curve can be asymmetric.
-        """
-        if not hasattr(self, 'swing_ratios'):
-            self.compute_swing_ratio()
-        if not hasattr(self, '_pairwise_attainment_bias'):
-            self._pairwise_attainment_bias,_ =est.pairwise_attainment_bias(self.turnout.values,
-                                                           self.shares.values,
-                                                           self.swing_ratios)
-        return self._pairwise_attainment_bias
+        return (np.asarray(self.turnout), 
+                obs_vote_shares, obs_party_vote_shares,
+                     wins, obs_party_seat_shares)
