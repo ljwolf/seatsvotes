@@ -62,20 +62,20 @@ class SeatsVotes(TwoPartyEstimator): # should inherit from preprocessor?
         contrasts = []
         hyperweights = []
         n_contested = 0
-        for pattern in self.patterns:
-            contrast = prep.make_log_contrasts(pattern.contests,
-                                               holdout=holdout,
-                                               votecols=share_frame.columns)
-            contrasts.append(contrast)
-            hyperweights.append(contrast.shape[0] / self.N)
-            n_contested += contrast.shape[0]
-        assert n_contested + self.n_uncontested == self.N, "missing/double-counting!"
-        self.n_contested = n_contested
-        self.contrasts = contrasts
-        self._frac_contested = n_contested / self.N
-        self.hyperweights = hyperweights
-        self._max_size, self._argmax_size = np.max(self.P), np.argmax(self.P)
-        self._has_been_fit = False
+        # for pattern in self.patterns:
+        #     contrast = prep.make_log_contrasts(pattern.contests,
+        #                                        holdout=holdout,
+        #                                        votecols=self._share_cols)
+        #     contrasts.append(contrast)
+        #     hyperweights.append(contrast.shape[0] / self.N)
+        #     n_contested += contrast.shape[0]
+        # assert n_contested + self.n_uncontested == self.N, "missing/double-counting!"
+        # self.n_contested = n_contested
+        # self.contrasts = contrasts
+        # self._frac_contested = n_contested / self.N
+        # self.hyperweights = hyperweights
+        # self._max_size, self._argmax_size = np.max(self.P), np.argmax(self.P)
+        # self._has_been_fit = False
 
     def fit(self, n_components=None, ic='bic',
             model_kw=dict(), fit_kw=dict(), ic_kw=dict(),
