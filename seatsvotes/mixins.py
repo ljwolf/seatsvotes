@@ -759,8 +759,10 @@ class TwoPartyEstimator(AdvantageEstimator):
             sims, turnout = sims
         else:
             turnout = np.ones_like(sims)
-            if use_empirical_turnout:
+            if use_empirical_turnout is True:
                 turnout *= empirical_turnout
+            elif isinstance(use_empirical_turnout, np.ndarray):
+                turnout *= use_empirical_turnout
         gaps = [efficiency_gap(elex, turnout_i) for
                  elex, turnout in zip(sims,turnout)]
         if q is None:
