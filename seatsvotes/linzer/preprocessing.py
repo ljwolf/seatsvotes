@@ -98,11 +98,10 @@ def make_log_contrasts(elex_frame, votecols, unc_threshold=.05,  holdout=None):
     a dataframe containing the log odds ratio of
     (possibly) less than n elections over p-1 parties
     """
-    votecols = ['turnout'] + votecols
     have_in_frame = [col for col in votecols if col in elex_frame.columns]
     votes = elex_frame[have_in_frame]
     if holdout is None:
-        holdout = have_in_frame[1]
+        holdout = have_in_frame[-1]
 
     remaining = votes.drop(holdout, axis=1).values
     holdout_data = votes[[holdout]].values

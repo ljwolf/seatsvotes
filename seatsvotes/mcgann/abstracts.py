@@ -70,6 +70,9 @@ class SeatsVotes(Preprocessor, AlwaysPredictPlotter, TwoPartyEstimator):
         unite.columns = self.years
         return unite
 
+    def _extract_election(self, t=-1, year=None):
+        return self._extract_data(t=t,year=year)
+
     def simulate_elections(self, n_sims = 10000, t=-1, year=None,
                            target_v=None, swing=0., fix=False, predict=True):
         if year is None:

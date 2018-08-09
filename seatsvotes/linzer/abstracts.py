@@ -1,14 +1,16 @@
 from . import fit as _fit, preprocessing as prep
 from .. import estimators as est
 from .. import utils as ut
-from ..mixins import TwoPartyEstimator
+from ..mixins import TwoPartyEstimator, Plotter
 from sklearn import mixture as mix
+from collections import namedtuple as n
 import numpy as np
 import pandas as pd
 import copy
 from warnings import warn as Warn
 
-class SeatsVotes(TwoPartyEstimator): # should inherit from preprocessor?
+
+class SeatsVotes(Plotter, TwoPartyEstimator): # should inherit from preprocessor?
     def __init__(self, elex_frame, 
                  holdout=None, threshold=.95, 
                  share_pattern='_share',
@@ -25,6 +27,7 @@ class SeatsVotes(TwoPartyEstimator): # should inherit from preprocessor?
         holdout     :   string
         kws         :   dict of keyword arguments
         """
+        super(SeatsVotes).__init__()
         elex_frame = elex_frame.copy(deep=True)
         share_frame = elex_frame.filter(like=share_pattern).copy()
         turnout = elex_frame.get(turnout_col)
@@ -39,6 +42,7 @@ class SeatsVotes(TwoPartyEstimator): # should inherit from preprocessor?
             else:
                 elex_frame['opponent_share'] = 1 - share_frame.values
                 share_frame['opponent_share'] = 1 - share_frame.values
+                share_frame = share_frame[share_frame.columns[::-1]]
                 holdout = 'opponent_share'
         self._data = elex_frame
         self._share_cols = share_frame.columns.tolist()
@@ -62,20 +66,20 @@ class SeatsVotes(TwoPartyEstimator): # should inherit from preprocessor?
         contrasts = []
         hyperweights = []
         n_contested = 0
-        # for pattern in self.patterns:
-        #     contrast = prep.make_log_contrasts(pattern.contests,
-        #                                        holdout=holdout,
-        #                                        votecols=self._share_cols)
-        #     contrasts.append(contrast)
-        #     hyperweights.append(contrast.shape[0] / self.N)
-        #     n_contested += contrast.shape[0]
-        # assert n_contested + self.n_uncontested == self.N, "missing/double-counting!"
-        # self.n_contested = n_contested
-        # self.contrasts = contrasts
-        # self._frac_contested = n_contested / self.N
-        # self.hyperweights = hyperweights
-        # self._max_size, self._argmax_size = np.max(self.P), np.argmax(self.P)
-        # self._has_been_fit = False
+        for pattern in self.patterns:
+            contrast = prep.make_log_contrasts(pattern.contests,
+                                               holdout=holdout,
+                                               votecols=self._share_cols)
+            contrasts.append(contrast)
+            hyperweights.append(contrast.shape[0] / self.N)
+            n_contested += contrast.shape[0]
+        assert n_contested + self.n_uncontested == self.N, "missing/double-counting!"
+        self.n_contested = n_contested
+        self.contrasts = contrasts
+        self._frac_contested = n_contested / self.N
+        self.hyperweights = hyperweights
+        self._max_size, self._argmax_size = np.max(self.P), np.argmax(self.P)
+        self._has_been_fit = False
 
     def fit(self, n_components=None, ic='bic',
             model_kw=dict(), fit_kw=dict(), ic_kw=dict(),
@@ -159,11 +163,6 @@ class SeatsVotes(TwoPartyEstimator): # should inherit from preprocessor?
             out = np.vstack((uncontesteds, contesteds))
         else:
             out = contesteds
-        if self._twoparty:
-            # state two-party races as omitted-category simulations, 
-            # just like the rest of the library
-            out = out[:,:-1]
-            assert out.shape[1] == 2
         return out
 
     def draw_uncontesteds(self, n_samples=1):
@@ -181,15 +180,16 @@ class SeatsVotes(TwoPartyEstimator): # should inherit from preprocessor?
         if n_samples == 0:
             return
         n_of_each = np.random.multinomial(n_samples, self._uncontested_p)
-        uncs = [[np.zeros(self.P,) + (k == n_of_each)]*k
-                 for k in n_of_each if k > 0]
+        ranger = np.arange(len(n_of_each))
+        uncs = [[np.zeros(self.P,) + (i==ranger).astype(int)]*k
+                 for i,k in enumerate(n_of_each) if k > 0]
         out = np.vstack(uncs).astype(int)
         out = np.hstack((np.zeros((n_samples, 1)), out))
-        return pd.DataFrame(out, columns=self._data.columns)
+        return pd.DataFrame(out, columns=['turnout', *self._share_cols])
 
     def simulate_elections(self, n_sims = 1000, swing=0, 
                            target_v=None,
-                           fix=False):
+                           fix=False, **kw):
         """
         Construct a new set of `n_elections` elections.
 
@@ -204,6 +204,8 @@ class SeatsVotes(TwoPartyEstimator): # should inherit from preprocessor?
         or, two (n_sims x n_observations) arrays containing the turnout & vote shares
         in a two-party simulation
         """
+        if kw is not None:
+            Warn('Additional arguments ignored: {}'.format(', '.join(kw.keys())))
         if ((swing != 0) or (target_v is not None)) and not self._twoparty:
             raise NotImplementedError("Multiparty swing not yet implemented.")
         if not self._has_been_fit:
@@ -212,27 +214,36 @@ class SeatsVotes(TwoPartyEstimator): # should inherit from preprocessor?
                   for _ in range(n_sims))
         out_df = (df.assign(run = i) for i,df in enumerate(out_df))
         out_df = pd.concat(out_df, axis=0)
+        out_df.columns = ['turnout'] + self._share_cols + ['run']
+        for col in self._share_cols:
+            out_df[col] = np.clip(out_df[col], 0,1)
+        out_df['turnout'] = out_df.turnout.astype(int)
         if self._twoparty:
+            turnout = out_df.turnout.values
+            votes = out_df.drop(['turnout', 'opponent_share', 'run'], axis=1).values
+            observed = self._extract_election()
+            pvs = observed[2][0]
             if target_v is not None and swing != 0:
                 raise ValueError("Provide only target_v or swing, not both.")
             if target_v is not None:
-                swing = target_v - np.average(self.shares.iloc[:,0].values,
-                                              self.turnout)
-            turnouts = out_df.iloc[:,0].values.reshape(n_sims, self.N)
-            votes = out_df.iloc[:,1].values.reshape(n_sims, self.N)
-            return np.clip(votes + swing, 0,1), turnouts
+                swing = target_v - observed
+            turnouts = turnout.reshape(n_sims, self.N)
+            votes = votes.reshape(n_sims, self.N)
+            return np.clip(votes + swing, 0,1), turnouts.astype(int)
         return out_df
 
     def _extract_election(self, *args, **kw):
         """ extract empirical elections from linzer model"""
         if self._twoparty:
-            obs_vote_shares = self.share_frame.iloc[:,0].values
+            obs_vote_shares = self.shares.drop('opponent_share',axis=1).values.flatten()
             obs_party_vote_shares = np.average(obs_vote_shares, 
-                                               weight=self.turnout)
-            obs_seats = (obs_vote_shares > .5).astype(int)
-            obs_party_seat_shares = obs_seats.mean()
+                                               weights=self.turnout)
+            obs_party_vote_shares = np.array([obs_party_vote_shares, 
+                                              1 - obs_party_vote_shares])
+            wins = (obs_vote_shares > .5).astype(int)
+            obs_party_seat_shares = wins.mean()
         else:
-            obs_vote_shares = self.share_frame.values
+            obs_vote_shares = self.shares.values
             obs_party_vote_shares = np.average(obs_vote_shares, 
                                                weights=self.turnout,
                                                axis=0)

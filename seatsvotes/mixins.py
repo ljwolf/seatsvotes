@@ -418,6 +418,7 @@ class Plotter(object):
         -------
         figure and axis of the rank vote plot
         """
+        assert self._twoparty, "Plots are only well-defined for two-party elections"
         from scipy.stats import rankdata
         turnout, vshares, pvshares, *rest = self._extract_data(t=t, year=year)
         vshares = vshares[:,0]
@@ -451,6 +452,7 @@ class Plotter(object):
         """
         This is plot_rankvote with normalize and mean_center forced to be true.
         """
+        assert self._twoparty, "Plots are only well-defined for two-party elections"
         kwargs['normalize'] = True
         kwargs['mean_center'] = True
         return self.plot_rankvote(*args, **kwargs)
@@ -461,6 +463,9 @@ class Plotter(object):
                                   scatter_kw=dict(),
                                   mean_center=True, normalize=True,
                                   silhouette=True,
+                                  scatter=True,
+                                  env=True,
+                                  median=True,
                                   q=[5,50,95],
                                   band=False,
                                   env_kw=dict(), median_kw=dict(),
@@ -489,11 +494,14 @@ class Plotter(object):
         median_kw
         return_sims
         """
+        assert self._twoparty, "Plots are only well-defined for two-party elections"
         from scipy.stats import rankdata
         if year is not None:
             t = list(self.years).index(year)
         sims = self.simulate_elections(t=t, year=year, n_sims=n_sims, swing=swing,
                                        target_v=target_v, fix=False, predict=predict)
+        if isinstance(sims, tuple):
+            sims, _ = sims
         ranks = [rankdata(1-sim, method='max').astype(float) for sim in sims]
         N = len(sims[0])
 
@@ -504,8 +512,8 @@ class Plotter(object):
             f = plt.gcf()
 
         if mean_center:
-            target_v = np.average(self.wide[t].vote_share,
-                                  weights=self.wide[t].weight)
+            elex = self._extract_election(t=t, year=year)
+            target_v = elex[2][0]
 
         shift = (target_v - .5) if mean_center else 0
         rescale = N if normalize else 1
@@ -529,8 +537,9 @@ class Plotter(object):
             scatter_kw['color'] = scatter_kw.get('color', 'k')
             scatter_kw['linewidth'] = scatter_kw.get('linewidth', 0)
             scatter_kw['marker'] = scatter_kw.get('marker', 'o')
-        for sim, rank in zip(sims, ranks):
-            ax.scatter((1-sim)+shift, rank/rescale, **scatter_kw)
+        if scatter:
+            for sim, rank in zip(sims, ranks):
+                ax.scatter((1-sim)+shift, rank/rescale, **scatter_kw)
         if silhouette:
             env_kw['linestyle'] = env_kw.get('linestyle', '-')
             env_kw['color'] = env_kw.get('color', '#FD0E35')
@@ -541,28 +550,21 @@ class Plotter(object):
                 env_kw['alpha']=.4
                 ax.fill_betweenx(np.arange(1, N+1)/rescale,
                                  (1-lo)+shift, (1-hi)+shift, **env_kw)
-            else:
+            elif env:
                 ax.plot((1-lo)+shift, np.arange(1, N+1)/rescale, **env_kw)
+                ax.plot((1-hi)+shift, np.arange(1, N+1)/rescale, **median_kw)
+            elif median:
                 ax.plot((1-med)+shift, np.arange(1, N+1)/rescale, **median_kw)
-            ax.plot((1-med)+shift, np.arange(1, N+1)/rescale, **median_kw)
         if return_sims:
             return f,ax, sims, ranks
         return f,ax
 
 class AlwaysPredictPlotter(Plotter):
-    def plot_simulated_seatsvotes(self, n_sims=10000, swing=0, Xhyp=None,
-                                  target_v=None, t=-1, year=None,
-                                  ax=None, fig_kw=dict(), predict=True,
-                                  scatter_kw=dict(),
-                                  mean_center=True, normalize=True,
-                                  silhouette=True,
-                                  q=[5,50,95],
-                                  band=False,
-                                  env_kw=dict(), median_kw=dict(),
-                                  return_sims=False):
+    def plot_simulated_seatsvotes(self, predict=True, **kws):
         if predict is False:
             self._GIGO("Prediction should always be enabled for {}".format(self.__class__))
-        return Plotter.plot_simulated_seatsvotes(**vars())
+        return Plotter.plot_simulated_seatsvotes(self, predict=predict, **kws)
+    plot_simulated_seatsvotes.__doc__ = Plotter.plot_simulated_seatsvotes.__doc__
 
 class AdvantageEstimator(object):
     ...
@@ -595,6 +597,10 @@ class TwoPartyEstimator(AdvantageEstimator):
         % seat share. 
         """
         assert self._twoparty, 'Default Estimation only currently well-defined for two-party elections'
+        if hinge is None:
+            result = self._extract_election(year=simulation_kws.get('year'))
+            party_voteshares = result[2]
+            hinge = party_voteshares[0]
         simulation_kws.setdefault('target_v', hinge)
         simulation_kws['fix'] = False
 
@@ -608,12 +614,13 @@ class TwoPartyEstimator(AdvantageEstimator):
         from statsmodels import api as sm
 
         seatshare = (simulations > .5).mean(axis=1)
-        voteshare = np.average(simulations, turnout, axis=1)
+        voteshare = np.average(simulations, weights=turnout, axis=1)
         in_bin = np.logical_and((voteshare > (hinge - bin_width)),
                                 (voteshare < (hinge + bin_width)))
         candidate_voteshares = voteshare[in_bin]
         candidate_seatshares = seatshare[in_bin]
-        model = sm.OLS(candidate_seatshares, sm.add_constant(candidate_voteshares))
+
+        model = sm.OLS(candidate_seatshares, sm.add_constant(candidate_voteshares)).fit()
         _, resp = model.params
         _, stderr = model.bse
         return resp*.01, stderr*.01
