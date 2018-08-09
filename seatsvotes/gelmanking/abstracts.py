@@ -7,7 +7,7 @@ from . import utils as ut
 from . import fit
 from .. import estimators as est
 from .. import cvtools as cvt
-from ..mixins import Preprocessor, Plotter
+from ..mixins import Preprocessor, Plotter, TwoPartyEstimator
 from tqdm import tqdm
 
 class SeatsVotes(Preprocessor, Plotter, TwoPartyEstimator):
@@ -843,7 +843,7 @@ class SeatsVotes(Preprocessor, Plotter, TwoPartyEstimator):
                                                n_batches=n_batches, 
                                                batch_size=batch_size)
             mmd = self.median_mean_divergence(t=t, Xhyp=del_Xhyp)
-            rstats.append(np.hstack(mbon, obon, egap_T, egap_noT, agap, mmd)))
+            rstats.append(np.hstack(mbon, obon, egap_T, egap_noT, agap, mmd))
         # Reset the model for the time period back to the original model
         self.models[t] = original
 

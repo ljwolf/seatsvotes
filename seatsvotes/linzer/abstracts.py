@@ -229,7 +229,7 @@ class SeatsVotes(TwoPartyEstimator): # should inherit from preprocessor?
                                                weight=self.turnout,
                                                axis=0)
             wins = obs_vote_shares.argmax(axis=1)
-            _, n_wins np.unique(wins, return_counts=True)
+            _, n_wins = np.unique(wins, return_counts=True)
             obs_party_seat_shares = n_wins / n_wins.sum()
 
         return (np.asarray(self.turnout), 

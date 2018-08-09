@@ -618,7 +618,7 @@ class TwoPartyEstimator(AdvantageEstimator):
         _, stderr = model.bse
         return resp*.01, stderr*.01
 
-    def winners_bonus(self, hinge = None 
+    def winners_bonus(self, hinge = None,
                       q = [2.5, 50, 97.5], **simulation_kws):
         """
         estimate the winners bonus at a known hinge. Common hinge
@@ -666,7 +666,7 @@ class TwoPartyEstimator(AdvantageEstimator):
                                n_batches = 1000,
                                batch_size = 100, 
                                loss = 'mad',
-                               q = [2.5, 50, 97.5]
+                               q = [2.5, 50, 97.5],
                                **simulation_kws):
         """
         estimate the expected minimum average vote share needed to obtain a 
