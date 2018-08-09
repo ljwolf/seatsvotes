@@ -1,6 +1,7 @@
 from warnings import warn as Warn
 from collections import OrderedDict
 from .gelmanking import utils as gkutil
+from scipy.optimize import minimize_scalar
 import numpy as np
 import copy
 import pandas as pd
@@ -468,6 +469,7 @@ class Plotter(object):
         This plots the full distribution of rank-votes for simulated voteshares.
 
         Arguments
+        ---------
         n_sims
         swing
         Xhyp
@@ -563,542 +565,241 @@ class AlwaysPredictPlotter(Plotter):
         return Plotter.plot_simulated_seatsvotes(**vars())
 
 class AdvantageEstimator(object):
+    ...
 
-    @staticmethod
-    def _do_statistic(sims, *additional_parameters, **named_params):
-        # do advantage algorithm using simulations & knowns explicitly provided
-        return
+class TwoPartyEstimator(AdvantageEstimator):
 
-    def statistic(self, *additional_parameters, sim_kws={}, stat_kws={}):
-        sims = self.simulate(sim_kws)
-        self._do_statistic(self, *additional_parameters, stat_kws)
-
-    def get_swing_ratio(self, n_sims=1000, t=-1,
-                        Xhyp=None,
-                        predict=False, use_sim_swing=True):
+    def responsiveness(self, hinge = None, 
+                       bin_width = .02, **simulation_kws):
         """
-        Generic method to either compute predictive or counterfactual elections.
+        Estimate responsiveness at `hinge` using a linear regression
+        over seat shares & vote shares that fall within hinge+/bin_width.
 
-        See also: predict, counterfactal
+        See `simulate_elections` for more information on simulation options.
 
         Arguments
         ---------
-        n_sims      :   int
-                        number of simulations to conduct
-        t           :   int
-                        the target year to use for the counterfactual simulations
-        swing       :   float
-                        arbitrary shift in vote means
-        Xhyp        :   (n,k)
-                        artificial data to use in the simulation
-        target_v    :   float
-                        target mean vote share to peg the simulations to. Will 
-                        ensure that the average of all simulations conducted is
-                        this value.
-        fix         :   bool
-                        flag to denote whether each simulation is pegged exactly
-                         to `target_v`, or if it's only the average of all 
-                         simulations pegged to this value.
-        predict     :   bool
-                        whether or not to use the predictive distribution or the
-                         counterfactual distribution
-        use_sim_swing:  bool
-                        whether to use the instantaneous change observed in 
-                        simulations around the observed seatshare/voteshare 
-                        point, or to use the aggregate slope of the seats-votes
-                         curve over all simulations as the swing ratio
-        """
-        ### Simulated elections
-        simulations = self.simulate_elections(n_sims=n_sims, t=t,
-                                              swing=None, Xhyp=Xhyp,
-                                              target_v=.5, fix=False, predict=predict)
-        turnout = 1/self.models[t].model.weights
-        ref_voteshares = np.average(simulations, weights=turnout, axis=1)
-        grand_ref_voteshare = ref_voteshares.mean()
-
-        ref_seatshares = (simulations > .5).mean(axis=1)
-        grand_ref_seatshare = ref_seatshares.mean()
-
-        # chose to do this via tuples so that we can use the method elsewhere
-        obs_turnout, *rest = self._extract_election(t=t)
-        obs_voteshares, obs_party_voteshares, *rest = rest
-        obs_seats, obs_party_seatshares = rest
-
-        ## Swing Around Median
-        party_voteshares = np.hstack((ref_voteshares.reshape(-1,1),
-                                      1-ref_voteshares.reshape(-1,1)))
-        party_seatshares = np.hstack((ref_seatshares.reshape(-1,1),
-                                      1-ref_seatshares.reshape(-1,1)))
-
-        swing_near_median = est.swing_about_pivot(party_seatshares,
-                                                  party_voteshares,
-                                            np.ones_like(obs_party_voteshares)*.5)
-
-        ## Swing near observed voteshare
-        shift_simulations = simulations + (obs_party_voteshares[0] - .5)
-        shift_ref_voteshares = np.average(shift_simulations,
-                                          weights=turnout, axis=1)
-        shift_ref_seatshares = (shift_simulations > .5).mean(axis=1)
-
-        shift_party_voteshares = np.hstack((shift_ref_voteshares.reshape(-1,1),
-                                      1-shift_ref_voteshares.reshape(-1,1)))
-        shift_party_seatshares = np.hstack((shift_ref_seatshares.reshape(-1,1),
-                                      1-shift_ref_seatshares.reshape(-1,1)))
-
-        swing_at_observed = est.swing_about_pivot(shift_party_seatshares,
-                                                  shift_party_voteshares,
-                                                  obs_party_voteshares)
-        ## Sanity Check
-        if not np.isfinite(swing_near_median).all():
-            Warn('The computation returned an infinite swing ratio. Returning for'
-                 ' debugging purposes...', stacklevel=2)
-            return party_seatshares, party_voteshares, obs_party_voteshares
-        elif not np.isfinite(swing_at_observed).all():
-            Warn('The computation returned an infinite swing ratio. Returning for'
-                 ' debugging purposes...', stacklevel=2)
-            return (shift_party_seatshares, shift_party_voteshares, obs_party_voteshares)
-        median_conints = est.intervals(party_seatshares, party_voteshares)
-        observed_conints = est.intervals(shift_party_seatshares,
-                                         shift_party_voteshares)
-        swing_lm, swing_lm_resid = est.swing_slope(shift_party_seatshares,
-                                                   shift_party_voteshares)
-
-        self._swing_ratios_emp = swing_at_observed[0]
-        self._swing_ratios_med = swing_near_median[0]
-        self._swing_ratios_lm = swing_lm.mean() #pool the parties in a 2party system
-        self._swing_CIs = observed_conints
-        self._swing_CIs_med = median_conints
-
-        self._use_sim_swing = use_sim_swing
-
-        return swing_at_observed[0] if use_sim_swing else swing_lm
-
-    def _median_bonus_from_simulations(self, sims, q=[5,50,95], return_all=False):
-        """
-        Compute the bonus afforded to the reference party using:
-
-        B = 2*E[s|v=.5] - 1
-
-        where s is the seat share won by the reference party and v is the average vote share won by the reference party.
-        """
-
-        expected_seatshare = 2*(np.mean((sims>.5), axis=1)-.5)
-        point_est = np.mean(expected_seatshare)
-        point_est_std = np.std(expected_seatshare)
-        if not return_all:
-            return np.array([point_est - point_est_std*2, 
-                             point_est, 
-                             point_est + point_est_std*2])
-        else:
-            return expected_seatshare
-
-    def _observed_bonus_from_simulations(self, sims,
-                                         q=[5,50,95], return_all = False):
-        """
-        Compute the bonus afforded to the reference party by using:
-
-        E[s | v=v_{obs}] - (1 - E[s | v = (1 - v_{obs})])
-
-        where s is the seat share won by the reference party and v_{obs} is the observed share of the vote won by the reference party. This reduces to the difference in peformance between the reference party and the opponent when the opponent does as well as the reference.
-        """
-        raise NotImplementedError
-        if year is not None:
-            t = self.years.tolist().index(year)
-        turnout, votes, observed_pvs, *rest = self._extract_election(t=t)
-        observed_ref_share = observed_pvs[0]
-        return self.winners_bonus_from_(n_sims=n_sims, 
-                                           target_v = observed_ref_share,
-                                           t=t, Xhyp=Xhyp, 
-                                           predict=predict, q=q, return_all=return_all)
-
-    def estimate_winners_bonus(self, n_sims=1000, t=-1, year = None,
-                               target_v=.5, Xhyp=None, predict=False, q=[5,50,95], return_all = False):
-        """
-        Compute the bonus afforded to the reference party by using:
-
-        E[s | v=v_i] - (1 - E[s | v = (1 - v_i)])
-
-        where s is the seat share won by the reference party and v_i is an arbitrary target vote share. This reduces to a difference in performance between the reference party and the opponent when the opponent and the reference win `target_v` share of the vote.
-        """
-        raise NotImplementedError
-        if year is not None:
-            t = self.years.tolist().index(year)
-        sims = self.simulate_elections(n_sims=n_sims, t=t, Xhyp=Xhyp, predict=predict,
-                                       target_v=target_v, fix=True)
-        complement = self.simulate_elections(n_sims=n_sims, t=t, Xhyp=Xhyp,
-                                             predict=predict, target_v=1-target_v,
-                                             fix=True)
-        weights = 1/self.models[t].model.weights
-        observed_expected_seats = np.mean(sims>.5, axis=1) #what you won
-        complement_opponent_seats = np.mean(1 - (complement>.5), axis=1) #what your oppo wins when you do as well as they did
-        point_est = np.mean(observed_expected_seats - complement_opponent_seats)
-        point_est_std = np.std(observed_expected_seats - complement_opponent_seats)
-        if not return_all:
-            return np.array([ point_est - 2*point_est_std, 
-                              point_est, 
-                              point_est + 2*point_est_std])
-        else:
-            return observed_expected_seats - complement_opponent_seats
-
-    def get_attainment_gap(self, t=-1, year=None, return_all = True):
-        """
-        Get the empirically-observed attainment gap, computed as the minimum vote share required to get a majority of the vote.
-
-        G_a = ((.5 - s)/\hat{r} + v) - .5
-
-        where s is the observed seat share, r is the estimated responsiveness in time t, and v is the party vote share in time t. Thus, the core of this statistic is a projection of the line with the responsiveness as the slope through the observed (v,s) point to a point (G_a,.5).
-
-        Inherently unstable, this estimate is contingent on the estimate of the swing ratio.
-        """
-        raise NotImplementedError
-        if not return_all:
-            self._GIGO('This cannot return all values, since it does not rely on simulation')
-        if year is not None:
-            t = list(self.years).index(year)
-        try:
-            return self._attainment_gap[t]
-        except AttributeError:
-            turnout, voteshare, *_ = self._extract_election(t)
-            sr = self.get_swing_ratio(t=t)
-            return est.attainment_gap(turnout, voteshare, sr)[0][0]
-
-    def simulate_attainment_gap(self, t=-1, year=None, Xhyp=None, predict=False, q=[5,50,95],
-                                 n_sim_batches=1000, sim_batch_size=None, 
-                                 best_target=None, return_all=False, **optimize_kws
-                                 ):
-        """
-        Estimate the attainment gap through simulation. Given a target vote share `best_target`,
-        find the q'th quantiles (5,50,95 by default) of (.5 - minV) where minV is the smallest vote
-        share in the batch (of size `sim_batch_size`) where the party stil retains a majority of the
-        house. If this simulation is centered at the "optimal" attainment gap value from `optimal_attainment_gap`, 
-        this should estimate percentile bounds on the smallest attainment gaps at that vote share. 
-
-        For example, if best_target = .5, then this means `n_sim_batches` of simulations would be conducted
-        where the average vote share over the entire batch was .5. Over these batches (each one of size `sim_batch_size`),
-        all realizations where the party wins a majority are retained. Then, the minimum average vote share in these
-        batches is computed and stored. 
-
-        After all these minima are computed, the qth quantiles of these minima are returned. 
-        They represent a the typical minimum vote share required by the party to win a majority. 
-        `best_target`, then, simply represents a target for the search space. It should
-        be small enough that the party occasionally wins very small majorities, but large enough that 
-        they win at least one majority per `sim_batch_size`. 
+        hinge    : float
+                   vote share (between 0 and 1) around which to estimate 
+                   the responsiveness.
+        bin_width: float
+                   span around the hinge to use in estimating the seats-votes curve
+                   over simulations. 
+        simulation_kws: keyword arguments
+                        see simulate_elections for options. 
         
+        Returns:
+        --------
+        (resp, stderr), where resp is the responsiveness estimate expressed in 
+        terms of the impact of a change of a single % of vote share on the expected
+        % seat share. 
+        """
+        assert self._twoparty, 'Default Estimation only currently well-defined for two-party elections'
+        simulation_kws.setdefault('target_v', hinge)
+        simulation_kws['fix'] = False
+
+        simulations = self.simulate_elections(**simulation_kws)
+        if isinstance(simulations, tuple):
+            simulations, turnout = simulations
+        else:
+            turnout_empirical,*_ = self._extract_election(simulation_kws.get('t', -1))
+            turnout = np.ones_like(simulations) * turnout_empirical
+
+        from statsmodels import api as sm
+
+        seatshare = (simulations > .5).mean(axis=1)
+        voteshare = np.average(simulations, turnout, axis=1)
+        in_bin = np.logical_and((voteshare > (hinge - bin_width)),
+                                (voteshare < (hinge + bin_width)))
+        candidate_voteshares = voteshare[in_bin]
+        candidate_seatshares = seatshare[in_bin]
+        model = sm.OLS(candidate_seatshares, sm.add_constant(candidate_voteshares))
+        _, resp = model.params
+        _, stderr = model.bse
+        return resp*.01, stderr*.01
+
+    def winners_bonus(self, hinge = None 
+                      q = [2.5, 50, 97.5], **simulation_kws):
+        """
+        estimate the winners bonus at a known hinge. Common hinge
+        values are the empirical mean vote and 50% (.5). Defaults 
+        to the empirical average. This is also known as "partisan bias"
+        from Gelman & King (1994), by the partisan symmetry standard. 
+
         Arguments
         ----------
-        t, year, Xhyp, predict (refer to self.simulate_elections)
-        q       :   iterable
-                    quantiles to use to summarize the minima
-        n_sim_batches:  int
-                        number of batches with which to simulate minima
-        sim_batch_size: int
-                        number of elections to simulate within each batch
-        best_target:    float
-                        vote share to center the batches
-        **optimize_kws: keyword argument dictionary
-                        passed to self.optimal_attainment_gap if no target 
-                        is provided. 
+        hinge    : float
+                   vote share (between 0 and 1) around which to estimate 
+                   the responsiveness.
+        q        : iterable (default: [2.5, 50, 97.5], the 95% simulation interval)
+                    percentiles to pass to numpy.percentile to extract from the
+                    distribution of simulated mean-median differences.
+                    If None, all simulated median-mean divergences are returned. 
+        simulation_kws: keyword arguments
+                        see simulate_elections for options.
+
         """
-        raise NotImplementedError
-        if year is None:
-            year = self._years[t]
-        elif year is not None:
-            t = self._years.tolist().index(year)
-        if sim_batch_size is None:
-            sim_batch_size = n_sim_batches // 10
-        if best_target is None:
-            best_target = .5 + -1 * self.optimal_attainment_gap(t=t, year=year, Xhyp=Xhyp,
-                                                      predict=predict, q=[50], 
-                                                      **optimize_kws)
-        agaps = []
-        weights = 1/self.models[t].model.weights
-        counter = 0
-        retry = 0
-        for _ in tqdm(range(n_sim_batches), 
-                      desc='simulating with target={}'.format(best_target)):
-            batch = self.simulate_elections(target_v=best_target, t=t, predict=predict,
-                                            Xhyp=Xhyp, n_sims=sim_batch_size, fix=False)
-            majorities = np.asarray([((sim > .5).mean() > .5) for sim in batch])
-            if not majorities.any():
-                retry += 1
-                continue
-            candidate = np.average(batch[majorities], weights=weights, axis=1).min()
-            agaps.append(candidate)
-        if retry > 0:
-            Warn('no majorities found in {} simulations! Configuration is: '
-                 '\n\t target: \t{} '
-                 '\n\t Xhyp is None: \t{}'
-                 '\n\t batch_size: \t{}'
-                 '\n\t n_batches: \t{}'
-                 ''.format(retry, best_target, Xhyp is None, 
-                           sim_batch_size, n_sim_batches))
-        if not return_all:
-            return np.percentile(.5 - np.asarray(agaps), q=q)
+        assert self._twoparty, 'Default Estimation only currently well-defined for two-party elections'
+        if hinge is None:
+            results = self._extract_election(simulation_kws.get('t', -1))
+            hinge = np.average(results[2])
+        simulation_kws['target_v'] = hinge
+        sims_A = self.simulate_elections(**simulation_kws)
+        simulation_kws['target_v'] = 1 - hinge
+        sims_B = self.simulate_elections(**simulation_kws)
+        if isinstance(sims_A, tuple):
+            sims_A, turnout_A = sims_A
+            sims_B, turnout_B = sims_B
         else:
-            return .5 - agaps
+            turnout_A = turnout_B = np.ones_like(sims_A) * results[1]
 
-    def optimal_attainment_gap(self, t=-1, year=None, 
-                               Xhyp=None, predict=False, q=[5,50,95],
-                               n_batches= 1000, batch_size=None, 
-                               loss='mad', return_all=False):
+        party_seatshares_A = (sims_A > .5).mean(axis=1)
+        party_seatshares_B = (sims_B > .5).mean(axis=1)
+
+        opponent_seatshares_B = 1 - party_seatshares_B
+        if q is None:
+            return party_seatshares_A - opponent_seatshares_B
+        return np.percentile(party_seatshares_A - opponent_seatshares_B,
+                             q=q)
+
+    def optimal_attainment_gap(self, 
+                               n_batches = 1000,
+                               batch_size = 100, 
+                               loss = 'mad',
+                               q = [2.5, 50, 97.5]
+                               **simulation_kws):
         """
-        Returns the `q`th percentiles (5,50,95 by default) for (.5 - v*), where
-        v* is the optimal statewide average vote share that minimizes a loss
-        function:
-        loss(.5 - E[s|v*])
-
-        Where loss(.) may be mean absolute deviation or squared error loss. 
-
-        In plain language, this is the excess statewide vote share (v* - .5) 
-        that a party wins when it wins a *bare majority* (its share of seats is
-        the smallest possible value above 50%) of the representative
-        body. If this is negative, the party must typically win more than 
-        50% of the votes to win 50% of the seats. If this is positive, 
+        estimate the expected minimum average vote share needed to obtain a 
+        legislative majority for either party. 
 
         Arguments
         ---------
-        t           : int
-                      index of the time period to compute the attainment gap.
-        year        : int
-                      the year to compute the attainment gap. Supersedes `t` 
-        Xhyp        : np.ndarray
-                      a matrix of hypothetical electoral conditions under which 
-                      to estimate the optimal attainment gap. 
-        predict     : bool
-                      whether to use the predictive form or counterfactual form
-                      of the election simulators
-        q           : iterable (tuple,list,array)
-                      set of quantiles passed to numpy.quantile
-        n_batches   : int
-                      number of times to estimate the optimal attainment gap. Since
-                      the gap is estimated many times over a stochastic objective,
-                      this governs how many replications of the optimization problem
-                      are conducted. 
-        batch_size  : int
-                      size of each simulation batch in the optimization problem. 
-                      The total amount of simulated elections will be 
-                      n_batches * (batch_size * nfev_per_batch), where nfev_per_batch
-                      is the unknown number of times scipy.optimize.minimize_scalar
-                      will evaluate the objective function. So, if this function is
-                      very slow, batch_size is likely the critical path. 
-        loss        : string
-                      the option for loss function type, either 'mad', the mean
-                      absolute deviation, or 'ssd', the sum of squared deviations.
-                      If a callable, it must return a single scalar that represents
-                      some distance metric about how far the seat shares in simulations
-                      from the model in time t fall from having a bare majority.
+        n_batches : int
+                    how many times to run the stochastic optimization algorithm
+                    to obtain expected minimum voteshares
+        batch_size: int
+                    how large each stochastic optimization's simulation batches
+                    should be.
+        loss      : str or callable (default: 'mad')
+                    if string, should be either 'mad' (mean absolute deviation)
+                    or 'ssd' (sum of squared differences). Otherwise, this should
+                    be a callable convex loss function that takes an array and returns
+                    a single scalar computing how far off the target seat share
+                    is from the desired seat share (should be .5 for most applications)
+        q         : iterable or None
+                    iterable of percentiles passed to numpy.percentile to summarize the 
+                    observed & opposition minimum voteshares. If None, returns all
+                    simulated minima for both parties. 
+        simulation_kws: keyword arguments
+                        see simulate_elections for options.
+        
+        Returns
+        -------
+        tuple of expected smallest majority-winning vote-shares,
+        summarized at percentiles in `q`: (reference_percentiles, opponent_percentiles)
+        if q is none, then all simulations are returned for both reference & opponent.
+        Further, if q is None, a differing number of simulations can be obtained 
+        for reference & opponent party if the stochastic optimization does not converge
+        in any given batch. 
         """
-        raise NotImplemetnedError
-        if year is None:
-            year = self._years[t]
-        if batch_size is None:
-            batch_size = n_batches // 10
-        elif year is not None:
-            t = self._years.tolist().index(year)
+        assert self._twoparty, 'Default Estimation only currently well-defined for two-party elections'
+        simulation_kws['n_sims'] = batch_size
+        if loss == 'mad':
+            loss = lambda x: np.abs(x - .5).mean()
+        elif loss == 'ssd':
+            loss = lambda x: np.sum((x - .5)**2)
+        elif not callable(loss):
+            raise ValueError("Unrecognized loss function: {}".format(loss))
+        def seatgap(target):
+            simulation_kws['target_v'] = target
+            sims = self.simulate_elections(**simulation_kws)
+            if isinstance(sims, tuple):
+                sims, _ = sims
+            seatshares = (sims > .5).mean(axis=1)
+            return loss(seatshares)
+        def oppo_seatgap(target):
+            return seatgap(1 - target)
         try:
-                from scipy.optimize import minimize_scalar
+            from tqdm import tqdm
         except ImportError:
-            raise ImportError('scipy.optimize is required to use this functionality')
-        if isinstance(loss, str):
-            if loss.lower() == 'mad':
-                def seatgap(target):
-                    """
-                    the mean absolute gap between the observed seatshare and .5
-                    """
-                    sims = self.simulate_elections(target_v=target, t=t, n_sims=batch_size,
-                                                   predict=predict, Xhyp=Xhyp)
-                    seats = np.asarray([(sim > .5).mean() for sim in sims]).reshape(-1,1)
-                    mad = np.abs(seats - .5).mean()
-                    return mad.item()
-            elif loss.lower() == 'ssd':
-                def seatgap(target):
-                    """
-                    The sum of squared deviations between the observed seatshare
-                    and .5
-                    """
-                    sims = self.simulate_elections(target_v = target, t=t, n_sims=batch_size, 
-                                                   predict=predict, Xhyp=Xhyp)
-                    seats = np.asarray([(sim > .5).mean() for sim in sims]).reshape(-1,1)
-                    ssd = (seats - .5).T.dot(seats - .5)
-                    return ssd.item()
-            else:
-                raise KeyError('Form of seatgap loss function ({}) is not '
-                               '("mad","ssd").'.format(loss.lower()))
-        elif callable(loss):
-            seatgap = loss
-        else:
-            raise TypeError('loss parameter not recognized as string ("mad", "ssd")'
-                            ' or callable')
+            def tqdm(a, desc=''):
+                return a
         best_targets = []
-        for _ in tqdm(range(n_batches), desc='optimizing'):
+        best_oppos = []
+        for _ in tqdm(range(n_batches), desc='optimizing batches...'):
             best_targets.append(minimize_scalar(seatgap,
                                                 tol = 1e-4,
                                                 bounds=(.05,.95), 
                                                 method='bounded'))
-        best_xs = np.asarray([op.x for op in best_targets if op.success])
-        if not return_all:
-            return np.percentile(.5 - best_xs, q=q)
+            best_oppos.append(minimize_scalar(oppo_seatgap, 
+                                              tol = 1e-4,
+                                              bounds=(.05,.95), 
+                                              method='bounded'))
+        best_references = np.asarray([op.x for op in best_targets if op.success])
+        best_oppos = np.asarray([op.x for op in best_oppos if op.success])
+        if q is None:
+            return best_references, best_oppos
         else:
-            return .5 - best_xs
+            q_ref = np.percentile(best_references, q=q)
+            q_opp = np.percentile(best_oppos, q=q)
+            return q_ref, q_opp
 
-    def get_efficiency_gap(self, t=-1, year=None, voteshares=None, turnout=True, return_all=True):
+    def efficiency_gap(self, q=[2.5, 50, 97.5], 
+                       use_empirical_turnout=True, **simulation_kws):
         """
-        Compute the percentage difference of wasted votes in a given election
-
-        G_e = W_1 - W_2 / \sum_i^n m
-
-        where W_k is the total wasted votes for party k, the number cast in excess of victory:
-
-        W_k = sum_i^n (V_{ik} - m_i)_+
-
-        Where V_{ik} is the raw vote cast in district i for party k and m_i is the total number of votes cast for all parties in district i
+        estimate the efficiency gap over simulated elections
         """
-        raise NotImplementedError
-        if not return_all:
-            self._GIGO('This function has no ability to return all of its results, because it does not rely on simulations.')
-        tvec, vshares, a, b, c = self._extract_election(t=t,year=year)
-        vshares = voteshares if voteshares is not None else vshares
-        if not isinstance(turnout, bool):
-            return est.efficiency_gap(vshares[:,0], turnout)
-        elif turnout:
-            return est.efficiency_gap(vshares[:,0], tvec)
+        assert self._twoparty, 'Default Estimation only currently well-defined for two-party elections'
+        t = simulation_kws.get('t', -1)
+        empirical_turnout, vote_shares, party_vote_share, *_ = self._extract_election(t)
+        simulation_kws.setdefault('target_v', party_vote_share)
+        from .estimators import efficiency_gap
+        sims = self.simulate_elections(**simulation_kws)
+        if isinstance(sims, tuple):
+            sims, turnout = sims
         else:
-            return est.efficiency_gap(vshares[:,0], turnout=None)
-
-    def estimate_efficiency_gap(self, t=-1, year=None, 
-                                Xhyp=None, predict=False, n_sims=1000,
-                                q=[5,50,95], turnout=True, return_all=False):
-        """
-        Compute the efficiency gap expectation over many simulated elections. 
-        This uses the same estimator as `get_efficiency_gap`, 
-        but computes the efficiency gap over many simulated elections.
-        """
-        raise NotImplementedError
-        tvec, *rest = self._extract_election(t=t, year=year)
-        if not isinstance(turnout, bool):
-            tvec = turnout
-        elif not turnout:
-            tvec = None
-        sims = self.simulate_elections(t=t,  Xhyp=Xhyp, predict=predict, n_sims=n_sims)
-        gaps = [est.efficiency_gap(sim.reshape(-1,1), turnout=tvec)
-                for sim in sims]
-        if not return_all:
-            return np.percentile(gaps, q=q)
-        else:
+            turnout = np.ones_like(sims)
+            if use_empirical_turnout:
+                turnout *= empirical_turnout
+        gaps = [efficiency_gap(elex, turnout_i) for
+                 elex, turnout in zip(sims,turnout)]
+        if q is None:
             return gaps
-    
-    def district_sensitivity(self, t=-1, Xhyp=None, predict=False, fix=False,
-                             swing=None, n_sims=1000, 
-                             batch_size=None, n_batches=None,
-                             reestimate=False, seed=2478879,
-                             **jackknife_kw):
+        else:
+            return np.percentile(gaps, q=q)
+
+    def median_mean_divergence(self, q=[2.5, 50, 97.5], **simulation_kws):
         """
-        This computes the deletion simulations.
-        t, Xhyp, predict, fix, swing, n_sims are all documented in simulate_elections.
-        batch_size and n_batches refer to arguments to optimal_attainment_gap
-        jackknife_kw refer to cvtools.jackknife arguments
+        estimate the divergence between median and mean district
+        vote shares in simulations, from McDonald & Best (2016). 
+        Arguments
+        ---------
+        q       :   iterable (default: [2.5, 50, 97.5], the 95% simulation interval)
+                    percentiles to pass to numpy.percentile to extract from the
+                    distribution of simulated mean-median differences.
+                    If None, all simulated median-mean divergences are returned. 
+        simulation_kws: keyword arguments
+                        see simulate_elections for options.
+        Returns
+        -------
+        percentiles according to q or, if q is None, all simulations.
         """
-        raise NotImplementedError
-        np.random.seed(seed)
-        if n_batches is None:
-            n_batches = n_sims
-        if batch_size is None:
-            batch_size = n_batches // 10
-        original = copy.deepcopy(self.models[t])
-        leverage = cvt.leverage(original)
-        resid = np.asarray(original.resid).reshape(-1,1)
-        del_models = cvt.jackknife(original, full=True, **jackknife_kw)
-        del_params = pd.DataFrame(np.vstack([d.params.reshape(1,-1) for d in del_models]),
-                                  columns=original.params.index)
+        assert self._twoparty, 'Default Estimation only currently well-defined for two-party elections'
+        simulations = self.simulate_elections(**simulation_kws)
+        if isinstance(simulations, tuple):
+            simulations, turnout = simulations
+        else:
+            t = simulation_kws.get('t', -1)
+            turnout = np.ones_like(simulations) * self._extract_election(t)[0]
+        mmds = np.median(simulations, axis=1) - np.average(simulations,
+                                                           weights=turnout,
+                                                           axis=1)
+        if q is None:
+            return mmds
+        else:
+            return np.percentile(mmds, q=q)
 
-        if not reestimate: #Then build the deleted models from copies of the original
-            mods = (copy.deepcopy(original) for _ in range(int(original.nobs)))
-            del_models = []
-            for i,mod in enumerate(mods):
-                mod.model.exog = np.delete(mod.model.exog, i, axis=0)
-                mod.model.endog = np.delete(mod.model.endog, i)
-                mod.model.weights = np.delete(mod.model.weights, i)                
-                del_models.append(mod)
-        rstats = []
 
-        # First, estimate full-map statistics
-        full_mbon = self.estimate_median_bonus(t=t, Xhyp=Xhyp)
-        full_obon = self.estimate_observed_bonus(t=t, Xhyp=Xhyp)
-        full_egap_T = self.estimate_efficiency_gap(t=t, Xhyp=Xhyp, turnout=True)
-        full_egap_noT = self.estimate_efficiency_gap(t=t, Xhyp=Xhyp, turnout=False)
-        full_obs_egap_T = self.get_efficiency_gap(t=t, turnout=True)
-        full_obs_egap_noT = self.get_efficiency_gap(t=t, turnout=False)
-        full_agap = self.optimal_attainment_gap(t=t, Xhyp=Xhyp, 
-                                                batch_size=batch_size, 
-                                                n_batches=n_batches)
-
-        # Then, iterate through the deleted models and compute 
-        # district sensivities in the target year (t). 
-
-        for idx,mod in tqdm(list(enumerate(del_models)), desc='jackknifing'):
-            self.models[t] = mod
-            del_vs = mod.model.endog[:,None]
-            del_w = mod.model.weights
-            del_X = mod.model.exog
-
-            # make sure the hypothetical gets deleted as well
-            del_Xhyp = np.delete(Xhyp, idx, axis=0) if Xhyp is not None else None
-
-            # Compute various bias measures:
-            # the observed efficiency gap (with/without turnout)
-            obs_egap_t = est.efficiency_gap(del_vs, del_w)
-            obs_egap_not = self.get_efficiency_gap(t=t, voteshares=del_vs,
-                                                   turnout=False)
-            # The median bonus
-            mbon = self.estimate_median_bonus(t=t, Xhyp=del_Xhyp, 
-                                              n_sims=n_sims)
-            # The observed bonus
-            obon = self.estimate_observed_bonus(t=t, Xhyp=del_Xhyp, 
-                                                n_sims=n_sims)
-
-            # The estimated (simulated) efficiency gap (with/without turnout)
-            egap_T = self.estimate_efficiency_gap(t=t, Xhyp=del_Xhyp, 
-                                                  n_sims=n_sims, 
-                                                  turnout=mod.model.weights)
-            egap_noT = self.estimate_efficiency_gap(t=t, Xhyp=del_Xhyp, 
-                                                    n_sims=n_sims,
-                                                    turnout=False)
-            agap = self.optimal_attainment_gap(t=t, Xhyp=del_Xhyp,
-                                               n_batches=n_batches, 
-                                               batch_size=batch_size)
-            rstats.append(np.hstack((obs_egap_t, obs_egap_not, 
-                                     mbon, obon, egap_T, egap_noT, agap)))
-        # Reset the model for the time period back to the original model
-        self.models[t] = original
-
-        # prepare to ship everything by building columns & dataframe
-        rstats = np.vstack(rstats)
-        cols = (['EGap_eT', 'EGap_enoT']
-                + ['{}_{}'.format(name, ptile)
-                for name in ['MBonus', 'OBonus', 'EGap_T', 'EGap_noT', 'AGap']
-                for ptile in (5, 50, 95)])
-        rstats = pd.DataFrame(rstats, columns=cols)
-
-        # and the leverage
-        leverage = pd.DataFrame(np.hstack((np.diag(leverage).reshape(-1,1), 
-                                           resid)),
-                                columns=['leverage', 'residual'])
-        dnames = self._designs[t].district_id
-
-        # and the statewide estimates
-        full_biases = pd.Series(np.hstack((full_obs_egap_T, full_obs_egap_noT,
-                                           full_mbon, full_obon, 
-                                           full_egap_T, full_egap_noT, full_agap))).to_frame().T
-        full_biases.columns = cols
-        full_ests = pd.concat((self.models[t].params.to_frame().T, full_biases), axis=1)
-        full_ests['district_id'] = 'statewide'
-        return pd.concat((full_ests, # stack statewide on top of
-                          pd.concat((dnames.reset_index(drop=True), # district-level results
-                                     del_params,
-                                     leverage,
-                                     rstats),
-                                     axis=1, ignore_index=False)),
-                          ignore_index=True, axis=0)
 
 ###################################
 # Dispatch Table for Uncontesteds #
