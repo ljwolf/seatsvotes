@@ -25,17 +25,21 @@ class SeatsVotes(TwoPartyEstimator): # should inherit from preprocessor?
         holdout     :   string
         kws         :   dict of keyword arguments
         """
-        share_frame = elex_frame.filter(like=share_pattern)
+        elex_frame = elex_frame.copy(deep=True)
+        share_frame = elex_frame.filter(like=share_pattern).copy()
         turnout = elex_frame.get(turnout_col)
+        elex_frame.rename(columns={turnout_col:'turnout', 
+                                   year_col:'year'}, inplace=True)
         if threshold < .5:
             Warn('Threshold is an upper, not lower bound. Converting to upper bound.')
             threshold = 1 - threshold
         if holdout is None:
-            holdout = share_frame.columns[1]
-        if isinstance(holdout, int):
-            self._holdout_idx = holdout
-        else:
-            self._holdout_idx = list(elex_frame.columns).index(holdout)
+            if len(share_frame.columns) > 1:
+                holdout = None
+            else:
+                elex_frame['opponent_share'] = 1 - share_frame.values
+                share_frame['opponent_share'] = 1 - share_frame.values
+                holdout = 'opponent_share'
         self._data = elex_frame
         self._share_cols = share_frame.columns.tolist()
         self._turnout_col = turnout_col
@@ -50,14 +54,18 @@ class SeatsVotes(TwoPartyEstimator): # should inherit from preprocessor?
         self._uncontested_threshold = threshold
         unc_d = (self.uncontested[self._share_cols].values >
                  self._uncontested_threshold).sum(axis=0)
-        self._uncontested_p = unc_d / self.n_uncontested
-        self.patterns = prep.extract_patterns(self.contested)
+        if self.n_uncontested == 0:
+            self._uncontested_p = np.zeros(len(unc_d))
+        else:
+            self._uncontested_p = unc_d / self.n_uncontested
+        self.patterns = prep.extract_patterns(self.contested, self._share_cols)
         contrasts = []
         hyperweights = []
         n_contested = 0
         for pattern in self.patterns:
             contrast = prep.make_log_contrasts(pattern.contests,
-                                               holdout=holdout)
+                                               holdout=holdout,
+                                               votecols=share_frame.columns)
             contrasts.append(contrast)
             hyperweights.append(contrast.shape[0] / self.N)
             n_contested += contrast.shape[0]
@@ -226,7 +234,7 @@ class SeatsVotes(TwoPartyEstimator): # should inherit from preprocessor?
         else:
             obs_vote_shares = self.share_frame.values
             obs_party_vote_shares = np.average(obs_vote_shares, 
-                                               weight=self.turnout,
+                                               weights=self.turnout,
                                                axis=0)
             wins = obs_vote_shares.argmax(axis=1)
             _, n_wins = np.unique(wins, return_counts=True)

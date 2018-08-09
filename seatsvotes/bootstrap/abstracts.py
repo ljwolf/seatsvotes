@@ -70,7 +70,7 @@ class SeatsVotes(Preprocessor, AlwaysPredictPlotter, TwoPartyEstimator):
             target_h = this_year.vote_share
         else:
             target_h = this_year.vote_share__prev
-        if swing is not None and target_v is not None:
+        if swing != 0 and target_v is not None:
             raise ValueError("either swing or target_v, not both.")
         elif target_v is not None:
             swing = (target_v - party_voteshares)
@@ -79,7 +79,11 @@ class SeatsVotes(Preprocessor, AlwaysPredictPlotter, TwoPartyEstimator):
         pweights = (this_year.weight / this_year.weight.sum()).values
         pweights = pweights[~obs_swings.isnull().values]
         pweights /= pweights.sum()
-        sim_swings = np.random.choice(obs_swings.dropna() + swing, (n_sims, n_dists), 
+        sim_swings = np.random.choice(obs_swings.dropna() + swing, size=(n_sims, n_dists), 
                                       replace=True, p=pweights)
         sim_h = target_h.values[None,:] + sim_swings
         return np.clip(sim_h, 0,1)
+
+    def _extract_election(self, *args, **kw):
+        """ extract empirical elections from bootstrapper """
+        return self._extract_data(*args, **kw)

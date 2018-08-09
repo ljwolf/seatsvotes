@@ -4,7 +4,7 @@ import numpy as np
 
 Pattern = namedtuple("Pattern", ['pattern', 'mask', 'contests', 'count'])
 
-def extract_patterns(df):
+def extract_patterns(df, votecols):
     """
     Extracts the unique patterns of contestation in an electoral system. Mimicks Linzer 2012's `findpatterns` R function.
 
@@ -30,8 +30,8 @@ def extract_patterns(df):
     then there are two unique patterns of contestation:
     {AB:2, ABC:2}
     """
-    votes = df.iloc[:,1:]
-    totals = df.iloc[:,0]
+    turnout = df['turnout']
+    votes = df[votecols]
     contesteds = votes > 0
     patterns = Counter([tuple(contestation_pattern) for
                         contestation_pattern in contesteds.values])
@@ -40,7 +40,9 @@ def extract_patterns(df):
         name = tuple(np.asarray(votes.columns)[np.asarray(pattern)])
         members = [i for i, row in enumerate(contesteds.values)
                    if tuple(row) == pattern]
-        contests_in_pattern = pd.concat((totals.iloc[members,].to_frame(), votes.iloc[members,][list(name)]), axis=1)
+        contests_in_pattern = pd.concat((turnout.iloc[members,].to_frame(), 
+                                         votes.iloc[members,][list(name)]), 
+                                        axis=1)
         pattern_tuples.append(Pattern(pattern = name, count=count,
                                       contests = contests_in_pattern, mask=pattern))
     return pattern_tuples
@@ -77,7 +79,7 @@ def make_election_frame(votes, shares=None, party_names=None, margin_idx=None):
         party_names = ['Party_{}'.format(i) for i in range(data.shape[-1] - 1)]
     return pd.DataFrame(data, columns=['Votes'] + list(party_names))
 
-def make_log_contrasts(elex_frame, unc_threshold=.05, votecols=None, holdout=None):
+def make_log_contrasts(elex_frame, votecols, unc_threshold=.05,  holdout=None):
     """
     Compute the log odds ratio of a collection of votes to a target reference holdout vote.
 
@@ -96,18 +98,18 @@ def make_log_contrasts(elex_frame, unc_threshold=.05, votecols=None, holdout=Non
     a dataframe containing the log odds ratio of
     (possibly) less than n elections over p-1 parties
     """
-    votes = elex_frame.iloc[:,1:]
-    if votecols is None:
-        votecols = votes.columns
+    have_in_frame = [col for col in votecols if col in elex_frame.columns]
+    votes = elex_frame[have_in_frame]
     if holdout is None:
-        holdout = votecols[0]
+        holdout = have_in_frame[1]
 
     remaining = votes.drop(holdout, axis=1).values
     holdout_data = votes[[holdout]].values
     out = np.log(remaining / holdout_data)
-    out = pd.DataFrame(out, columns=[col for col in votes if col != holdout],
+    out = pd.DataFrame(out, columns=[col for col in have_in_frame if col != holdout],
                             index=votes.index)
-    out = pd.concat((elex_frame.iloc[:,0], out), axis=1)
+    for col in votes:
+        elex_frame[col] = votes[col]
     return out
 
 

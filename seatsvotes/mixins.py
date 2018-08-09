@@ -197,7 +197,7 @@ class Preprocessor(object):
                             years=self.elex_frame.year,
                             redistrict=self.elex_frame.get('redistrict'),
                             district_id='district_id')
-        self.long = pd.concat(self.wide, axis=0)
+        self.long = pd.concat(self.wide, axis=0, sort=True)
 
     def _impute_turnout_from_voteshare_and_state(self, df, turnout_col='turnout',
                                                  state_col='state'):
@@ -345,7 +345,7 @@ class Preprocessor(object):
         obs_party_vote_shares = np.average(obs_vote_shares,
                                            weights=obs_turnout, axis=0)
         obs_party_seat_shares = np.mean(obs_seats, axis=0)
-        return (obs_turnout, obs_vote_shares, obs_party_vote_shares,
+        return (np.asarray(obs_turnout), obs_vote_shares, obs_party_vote_shares,
                              obs_seats, obs_party_seat_shares)
 
     def _extract_data_in_model(self, t=-1, year=None):
@@ -602,7 +602,7 @@ class TwoPartyEstimator(AdvantageEstimator):
         if isinstance(simulations, tuple):
             simulations, turnout = simulations
         else:
-            turnout_empirical,*_ = self._extract_election(simulation_kws.get('t', -1))
+            turnout_empirical,*_ = self._extract_election(year=simulation_kws.get('year', None))
             turnout = np.ones_like(simulations) * turnout_empirical
 
         from statsmodels import api as sm
@@ -640,8 +640,8 @@ class TwoPartyEstimator(AdvantageEstimator):
 
         """
         assert self._twoparty, 'Default Estimation only currently well-defined for two-party elections'
+        results = self._extract_election(year=simulation_kws.get('year', None))
         if hinge is None:
-            results = self._extract_election(simulation_kws.get('t', -1))
             hinge = np.average(results[2])
         simulation_kws['target_v'] = hinge
         sims_A = self.simulate_elections(**simulation_kws)
@@ -651,7 +651,7 @@ class TwoPartyEstimator(AdvantageEstimator):
             sims_A, turnout_A = sims_A
             sims_B, turnout_B = sims_B
         else:
-            turnout_A = turnout_B = np.ones_like(sims_A) * results[1]
+            turnout_A = turnout_B = np.ones_like(sims_A) * results[0].reshape(1,-1)
 
         party_seatshares_A = (sims_A > .5).mean(axis=1)
         party_seatshares_B = (sims_B > .5).mean(axis=1)
@@ -664,7 +664,7 @@ class TwoPartyEstimator(AdvantageEstimator):
 
     def optimal_attainment_gap(self, 
                                n_batches = 1000,
-                               batch_size = 100, 
+                               batch_size = 200, 
                                loss = 'mad',
                                q = [2.5, 50, 97.5],
                                **simulation_kws):
@@ -750,9 +750,9 @@ class TwoPartyEstimator(AdvantageEstimator):
         estimate the efficiency gap over simulated elections
         """
         assert self._twoparty, 'Default Estimation only currently well-defined for two-party elections'
-        t = simulation_kws.get('t', -1)
-        empirical_turnout, vote_shares, party_vote_share, *_ = self._extract_election(t)
-        simulation_kws.setdefault('target_v', party_vote_share)
+        year = simulation_kws.get('year', None)
+        empirical_turnout, vote_shares, party_vote_share, *_ = self._extract_election(year=year)
+        simulation_kws.setdefault('target_v', party_vote_share[0])
         from .estimators import efficiency_gap
         sims = self.simulate_elections(**simulation_kws)
         if isinstance(sims, tuple):
@@ -760,11 +760,11 @@ class TwoPartyEstimator(AdvantageEstimator):
         else:
             turnout = np.ones_like(sims)
             if use_empirical_turnout is True:
-                turnout *= empirical_turnout
+                turnout *= empirical_turnout.reshape(1,-1)
             elif isinstance(use_empirical_turnout, np.ndarray):
-                turnout *= use_empirical_turnout
+                turnout *= use_empirical_turnout.reshape(1,-1)
         gaps = [efficiency_gap(elex, turnout_i) for
-                 elex, turnout in zip(sims,turnout)]
+                 elex, turnout_i in zip(sims,turnout)]
         if q is None:
             return gaps
         else:
@@ -791,8 +791,8 @@ class TwoPartyEstimator(AdvantageEstimator):
         if isinstance(simulations, tuple):
             simulations, turnout = simulations
         else:
-            t = simulation_kws.get('t', -1)
-            turnout = np.ones_like(simulations) * self._extract_election(t)[0]
+            year = simulation_kws.get('year', None)
+            turnout = np.ones_like(simulations) * self._extract_election(year=year)[0].reshape(1,-1)
         mmds = np.median(simulations, axis=1) - np.average(simulations,
                                                            weights=turnout,
                                                            axis=1)
