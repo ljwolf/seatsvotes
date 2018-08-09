@@ -1,13 +1,14 @@
 from . import fit as _fit, preprocessing as prep
 from .. import estimators as est
 from .. import utils as ut
+from ..mixins import TwoPartyEstimator
 from sklearn import mixture as mix
 import numpy as np
 import pandas as pd
 import copy
 from warnings import warn as Warn
 
-class SeatsVotes(object): # should inherit from preprocessor
+class SeatsVotes(TwoPartyEstimator): # should inherit from preprocessor?
     def __init__(self, elex_frame, 
                  holdout=None, threshold=.95, 
                  share_pattern='_share',

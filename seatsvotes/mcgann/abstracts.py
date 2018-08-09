@@ -1,7 +1,7 @@
 import numpy as np
 import statsmodels.api as sm
 import pandas as pd
-from ..mixins import Preprocessor, AlwaysPredictPlotter
+from ..mixins import Preprocessor, AlwaysPredictPlotter, TwoPartyEstimator
 
 def _year_to_decade(yr):
     """
@@ -10,7 +10,7 @@ def _year_to_decade(yr):
     """
     return (yr - 2) - (yr - 2) % 10
 
-class SeatsVotes(Preprocessor, AlwaysPredictPlotter):
+class SeatsVotes(Preprocessor, AlwaysPredictPlotter, TwoPartyEstimator):
     _twoparty = True
     def __init__(self, frame,
                  share_column='vote_share',

@@ -1,8 +1,8 @@
 import numpy as np
-from ..mixins import Preprocessor, AlwaysPredictPlotter
+from ..mixins import Preprocessor, AlwaysPredictPlotter, TwoPartyEstimator
 from warnings import warn
 
-class SeatsVotes(Preprocessor, AlwaysPredictPlotter):
+class SeatsVotes(Preprocessor, AlwaysPredictPlotter, TwoPartyEstimator):
     _twoparty = True
     def __init__(self, elex_frame, covariate_columns=None,
                  weight_column=None,
