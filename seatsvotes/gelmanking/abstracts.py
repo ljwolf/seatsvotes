@@ -10,7 +10,7 @@ from ..mixins import Preprocessor, Plotter, AdvantageEstimator
 from tqdm import tqdm
 
 
-class SeatsVotes(Preprocessor, Plotter, AdvantageEstimator):
+class Successive(Preprocessor, Plotter, AdvantageEstimator):
     def __init__(self, elex_frame, covariate_columns,
                  weight_column=None,
                  share_column='vote_share',

@@ -12,7 +12,7 @@ def _year_to_decade(yr):
     return (yr - 2) - (yr - 2) % 10
 
 
-class SeatsVotes(Preprocessor, AlwaysPredictPlotter):
+class Panel(Preprocessor, AlwaysPredictPlotter):
     def __init__(self, frame,
                  share_column='vote_share',
                  group_by='state',

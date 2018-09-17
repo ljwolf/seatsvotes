@@ -1,7 +1,7 @@
-from .gelmanking.abstracts import SeatsVotes as SuccessiveOLS
-from .linzer.abstracts import SeatsVotes as GaussianMixture
-from .bootstrap.abstracts import SeatsVotes as Bootstrapper
-from .moment_match.abstracts import SeatsVotes as MomentMatch
-from .mcgann.abstracts import SeatsVotes as PanelOLS
+from .gelmanking.abstracts import Successive
+from .linzer.abstracts import GaussianMixture
+from .bootstrap.abstracts import Bootstrap
+from .reswing.abstracts import Reswing
+from .mcgann.abstracts import Panel
 from .ecdf import Empirical_CDF as Empirical
 from . import data

@@ -3,7 +3,7 @@ from ..mixins import Preprocessor, AlwaysPredictPlotter, AdvantageEstimator
 from warnings import warn
 
 
-class SeatsVotes(Preprocessor, AlwaysPredictPlotter, AdvantageEstimator):
+class Bootstrap(Preprocessor, AlwaysPredictPlotter, AdvantageEstimator):
     def __init__(self, elex_frame, covariate_columns=None,
                  weight_column=None,
                  share_column='vote_share',

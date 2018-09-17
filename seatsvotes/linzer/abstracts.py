@@ -8,7 +8,7 @@ import copy
 from warnings import warn as Warn
 
 
-class SeatsVotes(AdvantageEstimator):  # should inherit from preprocessor
+class GaussianMixture(AdvantageEstimator):  # should inherit from preprocessor
     def __init__(self, elex_frame,
                  holdout=None, threshold=.95,
                  share_pattern='_share',
