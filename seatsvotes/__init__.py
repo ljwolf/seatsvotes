@@ -4,4 +4,4 @@ from .bootstrap.abstracts import SeatsVotes as Bootstrapper
 from .moment_match.abstracts import SeatsVotes as MomentMatch
 from .mcgann.abstracts import SeatsVotes as PanelOLS
 from .ecdf import Empirical_CDF as Empirical
-from .. import data
+from . import data

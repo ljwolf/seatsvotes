@@ -13,6 +13,7 @@ except ImportError:
             raise ImportError("No module named matplotlib")
     plt = RaiseForMissingMPL()
 
+
 class GIGOError(Exception):
     """
     You're trying to do something that will significantly harm
@@ -21,8 +22,10 @@ class GIGOError(Exception):
     """
     pass
 
+
 def _raiseGIGO(msg):
     raise GIGOError(msg)
+
 
 class Preprocessor(object):
     """
@@ -52,13 +55,13 @@ class Preprocessor(object):
         if covariates is None:
             covariates = dict()
         frame = pd.DataFrame.from_dict(
-                                       dict(vote_share=voteshares,
-                                            turnout=turnout,
-                                            year=years,
-                                            redistrict=redistrict,
-                                            district_id=district_ids,
-                                            **covariates
-                                            ))
+            dict(vote_share=voteshares,
+                 turnout=turnout,
+                 year=years,
+                 redistrict=redistrict,
+                 district_id=district_ids,
+                 **covariates
+                 ))
         return cls(frame,
                    share_column='vote_share',
                    weight_column='turnout',
@@ -144,16 +147,19 @@ class Preprocessor(object):
                                 district_id) if x is not None]
         self.elex_frame[provided]
         self.elex_frame.rename(columns={
-            share_column : 'vote_share',
-            district_id : 'district_id',
-            year_column : 'year',
-            weight_column : 'weight',
-            redistrict_column : 'redistrict'
-            }, inplace=True)
+            share_column: 'vote_share',
+            district_id: 'district_id',
+            year_column: 'year',
+            weight_column: 'weight',
+            redistrict_column: 'redistrict'
+        }, inplace=True)
         try:
-            assert len(self.elex_frame.columns) == len(set(self.elex_frame.columns))
+            assert len(self.elex_frame.columns) == len(
+                set(self.elex_frame.columns))
         except AssertionError:
-            raise AssertionError('Election frame contains duplicated columns: {}'.format(self.elex_frame.columns))
+            raise AssertionError('Election frame contains '
+                                 'duplicated columns: {}'.format(
+                                     self.elex_frame.columns))
         if weight_column is None:
             self.elex_frame['weight'] = 1
 
@@ -161,21 +167,25 @@ class Preprocessor(object):
             uncontested = dict(method='censor')
         elif isinstance(uncontested, str):
             uncontested = dict(method=uncontested)
-        if (uncontested['method'].lower().startswith('imp') or 
-            uncontested['method'].lower() in ('recursive','singlepass')):
+        if (uncontested['method'].lower().startswith('imp') or
+                uncontested['method'].lower() in ('recursive', 'singlepass')):
             uncontested['covariates'] = copy.deepcopy(self._covariate_cols)
         if year_column is not None:
             try:
                 self.elex_frame['year'] = self.elex_frame.year.astype(int)
             except KeyError:
-                raise KeyError("The provided year column is not found in the dataframe."
+                raise KeyError("The provided year column is not "
+                               "found in the dataframe."
                                " Provided: {}".format(self._year_column))
         if redistrict_column is not None:
             try:
-                self.elex_frame.redistrict = self.elex_frame.redistrict.astype(int)
+                self.elex_frame.redistrict = self.elex_frame.redistrict.astype(
+                    int)
             except KeyError:
-                raise KeyError("The provided year column is not found in the dataframe."
-                               "\n\tProvided: {}".format(self._redistrict_column))
+                raise KeyError("The provided year column is "
+                               "not found in the dataframe."
+                               "\n\tProvided: {}".format(
+                                   self._redistrict_column))
         self._resolve_missing(method=missing)
         self._resolve_uncontested(**uncontested)
         if uncontested.get('ordinal', True):
@@ -184,18 +194,18 @@ class Preprocessor(object):
         else:
             dummies = pd.get_dummies(self.elex_frame.uncontested)
             dummies.columns = ['uncontested_R',
-                                 'contested',
+                               'contested',
                                'uncontested_D']
-            self.elex_frame = pd.concat((self.elex_frame, dummies),axis=1)
+            self.elex_frame = pd.concat((self.elex_frame, dummies), axis=1)
             self.elex_frame.drop('uncontested', axis=1, inplace=True)
             if uncontested['method'].lower() != 'drop':
                 self._covariate_cols.extend(dummies.columns.tolist())
 
-
         self.wide = gkutil.make_designs(self.elex_frame,
-                            years=self.elex_frame.year,
-                            redistrict=self.elex_frame.get('redistrict'),
-                            district_id='district_id')
+                                        years=self.elex_frame.year,
+                                        redistrict=self.elex_frame.get(
+                                            'redistrict'),
+                                        district_id='district_id')
         self.long = pd.concat(self.wide, axis=0)
 
     @staticmethod
@@ -211,8 +221,10 @@ class Preprocessor(object):
             missing_cols = df.columns[missing_data]
             self._GIGO("Missing data in imputation of turnout "
                        "for column: {}".format(missing_data))
-        import statsmodels.formula.api as smf, statsmodels.api as sm
-        model = smf.OLS('turnout ~ vote_share + I(vote_share**2) + C(state, Treatment)',
+        import statsmodels.formula.api as smf
+        import statsmodels.api as sm
+        model = smf.OLS('turnout ~ vote_share + '
+                        ' I(vote_share**2) + C(state, Treatment)',
                         data=df).fit()
         incomplete_ix = complete[complete[turnout_col].isnull()].index
         imcomplete_X = df.ix[incomplete, [turnout_col, state_col]]
@@ -233,7 +245,8 @@ class Preprocessor(object):
         elif (method.lower() == 'impute'):
             for i, year in self.elex_frame.groupby('year'):
                 colmeans = year[targets].mean(axis=0)
-                self.elex_frame.ix[year.index, targets] = year[targets].fillna(colmeans)
+                self.elex_frame.ix[year.index,
+                                   targets] = year[targets].fillna(colmeans)
         elif (method.lower() == 'ignore'):
             return
         else:
@@ -243,12 +256,13 @@ class Preprocessor(object):
         any_in_column = self.elex_frame[targets].isnull().any(axis=0)
         if any_in_column.any():
             still_missing = self.elex_frame.columns[any_in_columns]
-            self._GIGO('After resolving missing data using {}, the following columns '
+            self._GIGO('After resolving missing data '
+                       'using {}, the following columns '
                        'still have missing data: {}'.format(still_missing))
 
     def _resolve_uncontested(self, method='censor',
-                              floor=None, ceil=None,
-                              **special):
+                             floor=None, ceil=None,
+                             **special):
         """
         Resolve uncontested elections' vote shares using a specific method
         censor  :   clip the data to a given vote share
@@ -266,32 +280,34 @@ class Preprocessor(object):
         if method.lower() == 'recursive':
             method = 'impute_recursive'
         if (method.lower().startswith('winsor') or
-            method.lower().startswith('censor')):
-            floor, ceil = .1,.9
+                method.lower().startswith('censor')):
+            floor, ceil = .1, .9
         elif (method.lower() in ('shift', 'drop')):
             floor, ceil = .05, .95
         elif method.lower().startswith('imp'):
-            if special.get('covariates') == [] or special.get('covariates') is None:
+            if (special.get('covariates') == []
+                    or special.get('covariates') is None):
                 self._GIGO("Imputation selected but no covariates "
-                                "provided. Shifting uncontesteds to the "
-                                "mean is likely to harm the validity "
-                                "of inference. Provide a list to "
-                                "coviarate_cols to fix.")
+                           "provided. Shifting uncontesteds to the "
+                           "mean is likely to harm the validity "
+                           "of inference. Provide a list to "
+                           "coviarate_cols to fix.")
             if 'year' not in self.elex_frame:
                 self._GIGO("Imputation pools over each year. No "
-                                "years were provided in the input "
-                                "dataframe. Provide a year variate "
-                                "in the input dataframe to fix")
-            floor, ceil = .01,.99
+                           "years were provided in the input "
+                           "dataframe. Provide a year variate "
+                           "in the input dataframe to fix")
+            floor, ceil = .01, .99
             if method.endswith('recursive') or method.endswith('singlepass'):
                 # to do the stronger imputation, you need to get the redistricting vector
                 if self.elex_frame.get('redistrict') is None:
                     Warn('computing redistricting from years vector')
-                    self.elex_frame['redist'] = gkutil.census_redistricting(pd.Series(self.elex_frame.year))
+                    self.elex_frame['redist'] = gkutil.census_redistricting(
+                        pd.Series(self.elex_frame.year))
         elif method.lower() == 'ignore':
             floor, ceil = .05, .95
-            self.elex_frame['uncontested'] = ((self.elex_frame.vote_share > ceil).astype(int) 
-                                     + (self.elex_frame.vote_share < floor).astype(int)*-1)
+            self.elex_frame['uncontested'] = ((self.elex_frame.vote_share > ceil).astype(int)
+                                              + (self.elex_frame.vote_share < floor).astype(int)*-1)
             return
         else:
             raise KeyError("Uncontested method not understood."
@@ -300,7 +316,7 @@ class Preprocessor(object):
                            "'shift', 'drop', 'impute',"
                            " 'impute_recursive', 'impute_singlepass',"
                            "'singlepass'".format(method))
-        #if self.elex_frame.vote_share.isnull().any():
+        # if self.elex_frame.vote_share.isnull().any():
         #    raise self._GIGO("There exists a null vote share with full "
         #                    "covariate information. In order to impute,"
         #                    "the occupancy of the seat should be known. "
@@ -309,7 +325,6 @@ class Preprocessor(object):
         #                    "awarded to the opposition and 1 if the seat "
         #                    "was awarded to the reference party to fix.")
         design = self.elex_frame.copy(deep=True)
-
 
         self._prefilter = self.elex_frame.copy(deep=True)
         self.elex_frame = _unc[method](design,
@@ -338,15 +353,16 @@ class Preprocessor(object):
         """
         if year is not None:
             t = list(self.years).index(year)
-        obs_refparty_shares = self.wide[t].vote_share[:,None]
-        obs_vote_shares = np.hstack((obs_refparty_shares, 1-obs_refparty_shares))
+        obs_refparty_shares = self.wide[t].vote_share[:, None]
+        obs_vote_shares = np.hstack(
+            (obs_refparty_shares, 1-obs_refparty_shares))
         obs_seats = (obs_vote_shares > .5).astype(int)
         obs_turnout = self.wide[t].weight
         obs_party_vote_shares = np.average(obs_vote_shares,
                                            weights=obs_turnout, axis=0)
         obs_party_seat_shares = np.mean(obs_seats, axis=0)
         return (obs_turnout, obs_vote_shares, obs_party_vote_shares,
-                             obs_seats, obs_party_seat_shares)
+                obs_seats, obs_party_seat_shares)
 
     def _extract_data_in_model(self, t=-1, year=None):
         """
@@ -354,18 +370,21 @@ class Preprocessor(object):
         """
         if year is not None:
             t = list(self.years).index(year)
-        obs_refparty_shares = self.models[t].model.endog[:,None]
-        obs_vote_shares = np.hstack((obs_refparty_shares, 1-obs_refparty_shares))
+        obs_refparty_shares = self.models[t].model.endog[:, None]
+        obs_vote_shares = np.hstack(
+            (obs_refparty_shares, 1-obs_refparty_shares))
         obs_seats = (obs_refparty_shares > .5).astype(int)
         obs_turnout = self.models[t].model.weights
-        obs_party_vote_shares = np.average(obs_vote_shares, weights=obs_turnout, axis=0)
+        obs_party_vote_shares = np.average(
+            obs_vote_shares, weights=obs_turnout, axis=0)
         obs_party_seat_shares = np.mean(obs_seats, axis=0)
 
-        return (obs_turnout, obs_vote_shares, obs_party_vote_shares, 
+        return (obs_turnout, obs_vote_shares, obs_party_vote_shares,
                 obs_seats, obs_party_seat_shares)
 
     def _extract_election(self, t=-1, year=None):
-        return self._extract_data_in_model(t=t,year=year)
+        return self._extract_data_in_model(t=t, year=year)
+
 
 class Plotter(object):
     """
@@ -388,9 +407,8 @@ class Plotter(object):
         raise NotImplementedError("'simulate_elections' must be implemented on child class {}"
                                   " in order to be used.".format(type(self)))
 
-
-    def plot_rankvote(self, t=-1, year= None, normalize=False, mean_center=False,
-                      ax=None, fig_kw = dict(), scatter_kw=dict(c='k')):
+    def plot_rankvote(self, t=-1, year=None, normalize=False, mean_center=False,
+                      ax=None, fig_kw=dict(), scatter_kw=dict(c='k')):
         """
         Plot the rankvote curve for the given time period.
 
@@ -420,7 +438,7 @@ class Plotter(object):
         """
         from scipy.stats import rankdata
         turnout, vshares, pvshares, *rest = self._extract_data(t=t, year=year)
-        vshares = vshares[:,0]
+        vshares = vshares[:, 0]
         if ax is None:
             f = plt.figure(**fig_kw)
             ax = plt.gca()
@@ -445,7 +463,7 @@ class Plotter(object):
         if year is None:
             year = self.years[t]
         ax.set_title(title.format(year))
-        return f,ax
+        return f, ax
 
     def plot_empirical_seatsvotes(self, *args, **kwargs):
         """
@@ -461,7 +479,7 @@ class Plotter(object):
                                   scatter_kw=dict(),
                                   mean_center=True, normalize=True,
                                   silhouette=True,
-                                  q=[5,50,95],
+                                  q=[5, 50, 95],
                                   band=False,
                                   env_kw=dict(), median_kw=dict(),
                                   return_sims=False):
@@ -510,20 +528,21 @@ class Plotter(object):
         rescale = N if normalize else 1
 
         if silhouette:
-            #force silhouette aesthetics
+            # force silhouette aesthetics
             scatter_kw['alpha'] = scatter_kw.get('alpha', .01)
             scatter_kw['color'] = scatter_kw.get('color', 'k')
             scatter_kw['linewidth'] = scatter_kw.get('linewidth', 0)
             scatter_kw['marker'] = scatter_kw.get('marker', 'o')
             tally = OrderedDict()
-            tally.update({i:[] for i in range(1, N+1)})
+            tally.update({i: [] for i in range(1, N+1)})
             for sim, rank in zip(sims, ranks):
                 for hi, ri in zip(sim, rank):
                     tally[ri].append(hi)
-            ptiles = OrderedDict([(i,np.percentile(tally[i], q=q)) for i in tally.keys()])
+            ptiles = OrderedDict(
+                [(i, np.percentile(tally[i], q=q)) for i in tally.keys()])
             lo, med, hi = np.vstack(ptiles.values()).T
         else:
-            #suggest these otherwise, if user doesn't provide alternatives
+            # suggest these otherwise, if user doesn't provide alternatives
             scatter_kw['alpha'] = scatter_kw.get('alpha', .2)
             scatter_kw['color'] = scatter_kw.get('color', 'k')
             scatter_kw['linewidth'] = scatter_kw.get('linewidth', 0)
@@ -537,7 +556,7 @@ class Plotter(object):
             median_kw['linestyle'] = median_kw.get('linestyle', '-')
             median_kw['color'] = median_kw.get('color', '#FD0E35')
             if band:
-                env_kw['alpha']=.4
+                env_kw['alpha'] = .4
                 ax.fill_betweenx(np.arange(1, N+1)/rescale,
                                  (1-lo)+shift, (1-hi)+shift, **env_kw)
             else:
@@ -545,8 +564,9 @@ class Plotter(object):
                 ax.plot((1-med)+shift, np.arange(1, N+1)/rescale, **median_kw)
             ax.plot((1-med)+shift, np.arange(1, N+1)/rescale, **median_kw)
         if return_sims:
-            return f,ax, sims, ranks
-        return f,ax
+            return f, ax, sims, ranks
+        return f, ax
+
 
 class AlwaysPredictPlotter(Plotter):
     def plot_simulated_seatsvotes(self, n_sims=10000, swing=0, Xhyp=None,
@@ -555,13 +575,15 @@ class AlwaysPredictPlotter(Plotter):
                                   scatter_kw=dict(),
                                   mean_center=True, normalize=True,
                                   silhouette=True,
-                                  q=[5,50,95],
+                                  q=[5, 50, 95],
                                   band=False,
                                   env_kw=dict(), median_kw=dict(),
                                   return_sims=False):
         if predict is False:
-            self._GIGO("Prediction should always be enabled for {}".format(self.__class__))
+            self._GIGO(
+                "Prediction should always be enabled for {}".format(self.__class__))
         return Plotter.plot_simulated_seatsvotes(**vars())
+
 
 class AdvantageEstimator(object):
 
@@ -609,7 +631,7 @@ class AdvantageEstimator(object):
                         point, or to use the aggregate slope of the seats-votes
                          curve over all simulations as the swing ratio
         """
-        ### Simulated elections
+        # Simulated elections
         simulations = self.simulate_elections(n_sims=n_sims, t=t,
                                               swing=None, Xhyp=Xhyp,
                                               target_v=.5, fix=False, predict=predict)
@@ -625,31 +647,31 @@ class AdvantageEstimator(object):
         obs_voteshares, obs_party_voteshares, *rest = rest
         obs_seats, obs_party_seatshares = rest
 
-        ## Swing Around Median
-        party_voteshares = np.hstack((ref_voteshares.reshape(-1,1),
-                                      1-ref_voteshares.reshape(-1,1)))
-        party_seatshares = np.hstack((ref_seatshares.reshape(-1,1),
-                                      1-ref_seatshares.reshape(-1,1)))
+        # Swing Around Median
+        party_voteshares = np.hstack((ref_voteshares.reshape(-1, 1),
+                                      1-ref_voteshares.reshape(-1, 1)))
+        party_seatshares = np.hstack((ref_seatshares.reshape(-1, 1),
+                                      1-ref_seatshares.reshape(-1, 1)))
 
         swing_near_median = est.swing_about_pivot(party_seatshares,
                                                   party_voteshares,
-                                            np.ones_like(obs_party_voteshares)*.5)
+                                                  np.ones_like(obs_party_voteshares)*.5)
 
-        ## Swing near observed voteshare
+        # Swing near observed voteshare
         shift_simulations = simulations + (obs_party_voteshares[0] - .5)
         shift_ref_voteshares = np.average(shift_simulations,
                                           weights=turnout, axis=1)
         shift_ref_seatshares = (shift_simulations > .5).mean(axis=1)
 
-        shift_party_voteshares = np.hstack((shift_ref_voteshares.reshape(-1,1),
-                                      1-shift_ref_voteshares.reshape(-1,1)))
-        shift_party_seatshares = np.hstack((shift_ref_seatshares.reshape(-1,1),
-                                      1-shift_ref_seatshares.reshape(-1,1)))
+        shift_party_voteshares = np.hstack((shift_ref_voteshares.reshape(-1, 1),
+                                            1-shift_ref_voteshares.reshape(-1, 1)))
+        shift_party_seatshares = np.hstack((shift_ref_seatshares.reshape(-1, 1),
+                                            1-shift_ref_seatshares.reshape(-1, 1)))
 
         swing_at_observed = est.swing_about_pivot(shift_party_seatshares,
                                                   shift_party_voteshares,
                                                   obs_party_voteshares)
-        ## Sanity Check
+        # Sanity Check
         if not np.isfinite(swing_near_median).all():
             Warn('The computation returned an infinite swing ratio. Returning for'
                  ' debugging purposes...', stacklevel=2)
@@ -666,7 +688,7 @@ class AdvantageEstimator(object):
 
         self._swing_ratios_emp = swing_at_observed[0]
         self._swing_ratios_med = swing_near_median[0]
-        self._swing_ratios_lm = swing_lm.mean() #pool the parties in a 2party system
+        self._swing_ratios_lm = swing_lm.mean()  # pool the parties in a 2party system
         self._swing_CIs = observed_conints
         self._swing_CIs_med = median_conints
 
@@ -674,7 +696,7 @@ class AdvantageEstimator(object):
 
         return swing_at_observed[0] if use_sim_swing else swing_lm
 
-    def _median_bonus_from_simulations(self, sims, q=[5,50,95], return_all=False):
+    def _median_bonus_from_simulations(self, sims, q=[5, 50, 95], return_all=False):
         """
         Compute the bonus afforded to the reference party using:
 
@@ -683,18 +705,18 @@ class AdvantageEstimator(object):
         where s is the seat share won by the reference party and v is the average vote share won by the reference party.
         """
 
-        expected_seatshare = 2*(np.mean((sims>.5), axis=1)-.5)
+        expected_seatshare = 2*(np.mean((sims > .5), axis=1)-.5)
         point_est = np.mean(expected_seatshare)
         point_est_std = np.std(expected_seatshare)
         if not return_all:
-            return np.array([point_est - point_est_std*2, 
-                             point_est, 
+            return np.array([point_est - point_est_std*2,
+                             point_est,
                              point_est + point_est_std*2])
         else:
             return expected_seatshare
 
     def _observed_bonus_from_simulations(self, sims,
-                                         q=[5,50,95], return_all = False):
+                                         q=[5, 50, 95], return_all=False):
         """
         Compute the bonus afforded to the reference party by using:
 
@@ -707,13 +729,13 @@ class AdvantageEstimator(object):
             t = self.years.tolist().index(year)
         turnout, votes, observed_pvs, *rest = self._extract_election(t=t)
         observed_ref_share = observed_pvs[0]
-        return self.winners_bonus_from_(n_sims=n_sims, 
-                                           target_v = observed_ref_share,
-                                           t=t, Xhyp=Xhyp, 
-                                           predict=predict, q=q, return_all=return_all)
+        return self.winners_bonus_from_(n_sims=n_sims,
+                                        target_v=observed_ref_share,
+                                        t=t, Xhyp=Xhyp,
+                                        predict=predict, q=q, return_all=return_all)
 
-    def estimate_winners_bonus(self, n_sims=1000, t=-1, year = None,
-                               target_v=.5, Xhyp=None, predict=False, q=[5,50,95], return_all = False):
+    def estimate_winners_bonus(self, n_sims=1000, t=-1, year=None,
+                               target_v=.5, Xhyp=None, predict=False, q=[5, 50, 95], return_all=False):
         """
         Compute the bonus afforded to the reference party by using:
 
@@ -730,18 +752,21 @@ class AdvantageEstimator(object):
                                              predict=predict, target_v=1-target_v,
                                              fix=True)
         weights = 1/self.models[t].model.weights
-        observed_expected_seats = np.mean(sims>.5, axis=1) #what you won
-        complement_opponent_seats = np.mean(1 - (complement>.5), axis=1) #what your oppo wins when you do as well as they did
-        point_est = np.mean(observed_expected_seats - complement_opponent_seats)
-        point_est_std = np.std(observed_expected_seats - complement_opponent_seats)
+        observed_expected_seats = np.mean(sims > .5, axis=1)  # what you won
+        # what your oppo wins when you do as well as they did
+        complement_opponent_seats = np.mean(1 - (complement > .5), axis=1)
+        point_est = np.mean(observed_expected_seats -
+                            complement_opponent_seats)
+        point_est_std = np.std(observed_expected_seats -
+                               complement_opponent_seats)
         if not return_all:
-            return np.array([ point_est - 2*point_est_std, 
-                              point_est, 
-                              point_est + 2*point_est_std])
+            return np.array([point_est - 2*point_est_std,
+                             point_est,
+                             point_est + 2*point_est_std])
         else:
             return observed_expected_seats - complement_opponent_seats
 
-    def get_attainment_gap(self, t=-1, year=None, return_all = True):
+    def get_attainment_gap(self, t=-1, year=None, return_all=True):
         """
         Get the empirically-observed attainment gap, computed as the minimum vote share required to get a majority of the vote.
 
@@ -753,7 +778,8 @@ class AdvantageEstimator(object):
         """
         raise NotImplementedError
         if not return_all:
-            self._GIGO('This cannot return all values, since it does not rely on simulation')
+            self._GIGO(
+                'This cannot return all values, since it does not rely on simulation')
         if year is not None:
             t = list(self.years).index(year)
         try:
@@ -763,10 +789,10 @@ class AdvantageEstimator(object):
             sr = self.get_swing_ratio(t=t)
             return est.attainment_gap(turnout, voteshare, sr)[0][0]
 
-    def simulate_attainment_gap(self, t=-1, year=None, Xhyp=None, predict=False, q=[5,50,95],
-                                 n_sim_batches=1000, sim_batch_size=None, 
-                                 best_target=None, return_all=False, **optimize_kws
-                                 ):
+    def simulate_attainment_gap(self, t=-1, year=None, Xhyp=None, predict=False, q=[5, 50, 95],
+                                n_sim_batches=1000, sim_batch_size=None,
+                                best_target=None, return_all=False, **optimize_kws
+                                ):
         """
         Estimate the attainment gap through simulation. Given a target vote share `best_target`,
         find the q'th quantiles (5,50,95 by default) of (.5 - minV) where minV is the smallest vote
@@ -784,7 +810,7 @@ class AdvantageEstimator(object):
         `best_target`, then, simply represents a target for the search space. It should
         be small enough that the party occasionally wins very small majorities, but large enough that 
         they win at least one majority per `sim_batch_size`. 
-        
+
         Arguments
         ----------
         t, year, Xhyp, predict (refer to self.simulate_elections)
@@ -809,21 +835,24 @@ class AdvantageEstimator(object):
             sim_batch_size = n_sim_batches // 10
         if best_target is None:
             best_target = .5 + -1 * self.optimal_attainment_gap(t=t, year=year, Xhyp=Xhyp,
-                                                      predict=predict, q=[50], 
-                                                      **optimize_kws)
+                                                                predict=predict, q=[
+                                                                    50],
+                                                                **optimize_kws)
         agaps = []
         weights = 1/self.models[t].model.weights
         counter = 0
         retry = 0
-        for _ in tqdm(range(n_sim_batches), 
+        for _ in tqdm(range(n_sim_batches),
                       desc='simulating with target={}'.format(best_target)):
             batch = self.simulate_elections(target_v=best_target, t=t, predict=predict,
                                             Xhyp=Xhyp, n_sims=sim_batch_size, fix=False)
-            majorities = np.asarray([((sim > .5).mean() > .5) for sim in batch])
+            majorities = np.asarray(
+                [((sim > .5).mean() > .5) for sim in batch])
             if not majorities.any():
                 retry += 1
                 continue
-            candidate = np.average(batch[majorities], weights=weights, axis=1).min()
+            candidate = np.average(
+                batch[majorities], weights=weights, axis=1).min()
             agaps.append(candidate)
         if retry > 0:
             Warn('no majorities found in {} simulations! Configuration is: '
@@ -831,16 +860,16 @@ class AdvantageEstimator(object):
                  '\n\t Xhyp is None: \t{}'
                  '\n\t batch_size: \t{}'
                  '\n\t n_batches: \t{}'
-                 ''.format(retry, best_target, Xhyp is None, 
+                 ''.format(retry, best_target, Xhyp is None,
                            sim_batch_size, n_sim_batches))
         if not return_all:
             return np.percentile(.5 - np.asarray(agaps), q=q)
         else:
             return .5 - agaps
 
-    def optimal_attainment_gap(self, t=-1, year=None, 
-                               Xhyp=None, predict=False, q=[5,50,95],
-                               n_batches= 1000, batch_size=None, 
+    def optimal_attainment_gap(self, t=-1, year=None,
+                               Xhyp=None, predict=False, q=[5, 50, 95],
+                               n_batches=1000, batch_size=None,
                                loss='mad', return_all=False):
         """
         Returns the `q`th percentiles (5,50,95 by default) for (.5 - v*), where
@@ -897,9 +926,10 @@ class AdvantageEstimator(object):
         elif year is not None:
             t = self._years.tolist().index(year)
         try:
-                from scipy.optimize import minimize_scalar
+            from scipy.optimize import minimize_scalar
         except ImportError:
-            raise ImportError('scipy.optimize is required to use this functionality')
+            raise ImportError(
+                'scipy.optimize is required to use this functionality')
         if isinstance(loss, str):
             if loss.lower() == 'mad':
                 def seatgap(target):
@@ -908,7 +938,8 @@ class AdvantageEstimator(object):
                     """
                     sims = self.simulate_elections(target_v=target, t=t, n_sims=batch_size,
                                                    predict=predict, Xhyp=Xhyp)
-                    seats = np.asarray([(sim > .5).mean() for sim in sims]).reshape(-1,1)
+                    seats = np.asarray([(sim > .5).mean()
+                                        for sim in sims]).reshape(-1, 1)
                     mad = np.abs(seats - .5).mean()
                     return mad.item()
             elif loss.lower() == 'ssd':
@@ -917,9 +948,10 @@ class AdvantageEstimator(object):
                     The sum of squared deviations between the observed seatshare
                     and .5
                     """
-                    sims = self.simulate_elections(target_v = target, t=t, n_sims=batch_size, 
+                    sims = self.simulate_elections(target_v=target, t=t, n_sims=batch_size,
                                                    predict=predict, Xhyp=Xhyp)
-                    seats = np.asarray([(sim > .5).mean() for sim in sims]).reshape(-1,1)
+                    seats = np.asarray([(sim > .5).mean()
+                                        for sim in sims]).reshape(-1, 1)
                     ssd = (seats - .5).T.dot(seats - .5)
                     return ssd.item()
             else:
@@ -933,8 +965,8 @@ class AdvantageEstimator(object):
         best_targets = []
         for _ in tqdm(range(n_batches), desc='optimizing'):
             best_targets.append(minimize_scalar(seatgap,
-                                                tol = 1e-4,
-                                                bounds=(.05,.95), 
+                                                tol=1e-4,
+                                                bounds=(.05, .95),
                                                 method='bounded'))
         best_xs = np.asarray([op.x for op in best_targets if op.success])
         if not return_all:
@@ -956,19 +988,20 @@ class AdvantageEstimator(object):
         """
         raise NotImplementedError
         if not return_all:
-            self._GIGO('This function has no ability to return all of its results, because it does not rely on simulations.')
-        tvec, vshares, a, b, c = self._extract_election(t=t,year=year)
+            self._GIGO(
+                'This function has no ability to return all of its results, because it does not rely on simulations.')
+        tvec, vshares, a, b, c = self._extract_election(t=t, year=year)
         vshares = voteshares if voteshares is not None else vshares
         if not isinstance(turnout, bool):
-            return est.efficiency_gap(vshares[:,0], turnout)
+            return est.efficiency_gap(vshares[:, 0], turnout)
         elif turnout:
-            return est.efficiency_gap(vshares[:,0], tvec)
+            return est.efficiency_gap(vshares[:, 0], tvec)
         else:
-            return est.efficiency_gap(vshares[:,0], turnout=None)
+            return est.efficiency_gap(vshares[:, 0], turnout=None)
 
-    def estimate_efficiency_gap(self, t=-1, year=None, 
+    def estimate_efficiency_gap(self, t=-1, year=None,
                                 Xhyp=None, predict=False, n_sims=1000,
-                                q=[5,50,95], turnout=True, return_all=False):
+                                q=[5, 50, 95], turnout=True, return_all=False):
         """
         Compute the efficiency gap expectation over many simulated elections. 
         This uses the same estimator as `get_efficiency_gap`, 
@@ -980,16 +1013,17 @@ class AdvantageEstimator(object):
             tvec = turnout
         elif not turnout:
             tvec = None
-        sims = self.simulate_elections(t=t,  Xhyp=Xhyp, predict=predict, n_sims=n_sims)
-        gaps = [est.efficiency_gap(sim.reshape(-1,1), turnout=tvec)
+        sims = self.simulate_elections(
+            t=t,  Xhyp=Xhyp, predict=predict, n_sims=n_sims)
+        gaps = [est.efficiency_gap(sim.reshape(-1, 1), turnout=tvec)
                 for sim in sims]
         if not return_all:
             return np.percentile(gaps, q=q)
         else:
             return gaps
-    
+
     def district_sensitivity(self, t=-1, Xhyp=None, predict=False, fix=False,
-                             swing=None, n_sims=1000, 
+                             swing=None, n_sims=1000,
                              batch_size=None, n_batches=None,
                              reestimate=False, seed=2478879,
                              **jackknife_kw):
@@ -1007,43 +1041,46 @@ class AdvantageEstimator(object):
             batch_size = n_batches // 10
         original = copy.deepcopy(self.models[t])
         leverage = cvt.leverage(original)
-        resid = np.asarray(original.resid).reshape(-1,1)
+        resid = np.asarray(original.resid).reshape(-1, 1)
         del_models = cvt.jackknife(original, full=True, **jackknife_kw)
-        del_params = pd.DataFrame(np.vstack([d.params.reshape(1,-1) for d in del_models]),
+        del_params = pd.DataFrame(np.vstack([d.params.reshape(1, -1) for d in del_models]),
                                   columns=original.params.index)
 
-        if not reestimate: #Then build the deleted models from copies of the original
+        if not reestimate:  # Then build the deleted models from copies of the original
             mods = (copy.deepcopy(original) for _ in range(int(original.nobs)))
             del_models = []
-            for i,mod in enumerate(mods):
+            for i, mod in enumerate(mods):
                 mod.model.exog = np.delete(mod.model.exog, i, axis=0)
                 mod.model.endog = np.delete(mod.model.endog, i)
-                mod.model.weights = np.delete(mod.model.weights, i)                
+                mod.model.weights = np.delete(mod.model.weights, i)
                 del_models.append(mod)
         rstats = []
 
         # First, estimate full-map statistics
         full_mbon = self.estimate_median_bonus(t=t, Xhyp=Xhyp)
         full_obon = self.estimate_observed_bonus(t=t, Xhyp=Xhyp)
-        full_egap_T = self.estimate_efficiency_gap(t=t, Xhyp=Xhyp, turnout=True)
-        full_egap_noT = self.estimate_efficiency_gap(t=t, Xhyp=Xhyp, turnout=False)
+        full_egap_T = self.estimate_efficiency_gap(
+            t=t, Xhyp=Xhyp, turnout=True)
+        full_egap_noT = self.estimate_efficiency_gap(
+            t=t, Xhyp=Xhyp, turnout=False)
         full_obs_egap_T = self.get_efficiency_gap(t=t, turnout=True)
         full_obs_egap_noT = self.get_efficiency_gap(t=t, turnout=False)
-        full_agap = self.optimal_attainment_gap(t=t, Xhyp=Xhyp, 
-                                                batch_size=batch_size, 
+        full_agap = self.optimal_attainment_gap(t=t, Xhyp=Xhyp,
+                                                batch_size=batch_size,
                                                 n_batches=n_batches)
 
-        # Then, iterate through the deleted models and compute 
-        # district sensivities in the target year (t). 
+        # Then, iterate through the deleted models and compute
+        # district sensivities in the target year (t).
 
-        for idx,mod in tqdm(list(enumerate(del_models)), desc='jackknifing'):
+        for idx, mod in tqdm(list(enumerate(del_models)), desc='jackknifing'):
             self.models[t] = mod
-            del_vs = mod.model.endog[:,None]
+            del_vs = mod.model.endog[:, None]
             del_w = mod.model.weights
             del_X = mod.model.exog
 
             # make sure the hypothetical gets deleted as well
-            del_Xhyp = np.delete(Xhyp, idx, axis=0) if Xhyp is not None else None
+            del_Xhyp = np.delete(
+                Xhyp, idx, axis=0) if Xhyp is not None else None
 
             # Compute various bias measures:
             # the observed efficiency gap (with/without turnout)
@@ -1051,23 +1088,23 @@ class AdvantageEstimator(object):
             obs_egap_not = self.get_efficiency_gap(t=t, voteshares=del_vs,
                                                    turnout=False)
             # The median bonus
-            mbon = self.estimate_median_bonus(t=t, Xhyp=del_Xhyp, 
+            mbon = self.estimate_median_bonus(t=t, Xhyp=del_Xhyp,
                                               n_sims=n_sims)
             # The observed bonus
-            obon = self.estimate_observed_bonus(t=t, Xhyp=del_Xhyp, 
+            obon = self.estimate_observed_bonus(t=t, Xhyp=del_Xhyp,
                                                 n_sims=n_sims)
 
             # The estimated (simulated) efficiency gap (with/without turnout)
-            egap_T = self.estimate_efficiency_gap(t=t, Xhyp=del_Xhyp, 
-                                                  n_sims=n_sims, 
+            egap_T = self.estimate_efficiency_gap(t=t, Xhyp=del_Xhyp,
+                                                  n_sims=n_sims,
                                                   turnout=mod.model.weights)
-            egap_noT = self.estimate_efficiency_gap(t=t, Xhyp=del_Xhyp, 
+            egap_noT = self.estimate_efficiency_gap(t=t, Xhyp=del_Xhyp,
                                                     n_sims=n_sims,
                                                     turnout=False)
             agap = self.optimal_attainment_gap(t=t, Xhyp=del_Xhyp,
-                                               n_batches=n_batches, 
+                                               n_batches=n_batches,
                                                batch_size=batch_size)
-            rstats.append(np.hstack((obs_egap_t, obs_egap_not, 
+            rstats.append(np.hstack((obs_egap_t, obs_egap_not,
                                      mbon, obon, egap_T, egap_noT, agap)))
         # Reset the model for the time period back to the original model
         self.models[t] = original
@@ -1076,30 +1113,31 @@ class AdvantageEstimator(object):
         rstats = np.vstack(rstats)
         cols = (['EGap_eT', 'EGap_enoT']
                 + ['{}_{}'.format(name, ptile)
-                for name in ['MBonus', 'OBonus', 'EGap_T', 'EGap_noT', 'AGap']
-                for ptile in (5, 50, 95)])
+                   for name in ['MBonus', 'OBonus', 'EGap_T', 'EGap_noT', 'AGap']
+                   for ptile in (5, 50, 95)])
         rstats = pd.DataFrame(rstats, columns=cols)
 
         # and the leverage
-        leverage = pd.DataFrame(np.hstack((np.diag(leverage).reshape(-1,1), 
+        leverage = pd.DataFrame(np.hstack((np.diag(leverage).reshape(-1, 1),
                                            resid)),
                                 columns=['leverage', 'residual'])
         dnames = self._designs[t].district_id
 
         # and the statewide estimates
         full_biases = pd.Series(np.hstack((full_obs_egap_T, full_obs_egap_noT,
-                                           full_mbon, full_obon, 
+                                           full_mbon, full_obon,
                                            full_egap_T, full_egap_noT, full_agap))).to_frame().T
         full_biases.columns = cols
-        full_ests = pd.concat((self.models[t].params.to_frame().T, full_biases), axis=1)
+        full_ests = pd.concat(
+            (self.models[t].params.to_frame().T, full_biases), axis=1)
         full_ests['district_id'] = 'statewide'
-        return pd.concat((full_ests, # stack statewide on top of
-                          pd.concat((dnames.reset_index(drop=True), # district-level results
+        return pd.concat((full_ests,  # stack statewide on top of
+                          pd.concat((dnames.reset_index(drop=True),  # district-level results
                                      del_params,
                                      leverage,
                                      rstats),
-                                     axis=1, ignore_index=False)),
-                          ignore_index=True, axis=0)
+                                    axis=1, ignore_index=False)),
+                         ignore_index=True, axis=0)
 
 ###################################
 # Dispatch Table for Uncontesteds #
@@ -1164,7 +1202,7 @@ def _drop_unc(design, floor=.05, ceil=.95):
     return design[~mask]
 
 
-def _impute_unc(design, covariates,floor=.25, ceil=.75, fit_params=dict()):
+def _impute_unc(design, covariates, floor=.25, ceil=.75, fit_params=dict()):
     """
     This imputes the uncontested seats according
     to the covariates supplied for the model. Notably, this does not
@@ -1180,23 +1218,25 @@ def _impute_unc(design, covariates,floor=.25, ceil=.75, fit_params=dict()):
                  (design.vote_share < floor).astype(int) * -1)
     design['uncontested'] = indicator
     imputed = []
-    for yr,contest in design.groupby("year"):
+    for yr, contest in design.groupby("year"):
         mask = (contest.vote_share < floor) | (contest.vote_share > (ceil))
         mask |= contest.vote_share.isnull()
         contested = contest[~mask]
         uncontested = contest[mask]
         unc_ix = uncontested.index
         imputor = sm.WLS(contested.vote_share,
-                         sm.add_constant(contested[covariates], has_constant='add'),
+                         sm.add_constant(
+                             contested[covariates], has_constant='add'),
                          weights=contested.weight).fit(**fit_params)
         contest.ix[unc_ix, 'vote_share'] = imputor.predict(
-                                                           sm.add_constant(
-                                                           uncontested[covariates],
-                                                           has_constant='add'))
+            sm.add_constant(
+                uncontested[covariates],
+                has_constant='add'))
         imputed.append(contest)
     return pd.concat(imputed, axis=0)
 
-def _impute_singlepass(design, covariates, floor=.01, ceil = .99, fit_params=dict()):
+
+def _impute_singlepass(design, covariates, floor=.01, ceil=.99, fit_params=dict()):
     """
     Impute the uncontested vote shares using a single-pass strategy. This means that
     a model is fit on mutually-contested elections in each year, and then elections
@@ -1208,10 +1248,10 @@ def _impute_singlepass(design, covariates, floor=.01, ceil = .99, fit_params=dic
         import statsmodels.api as sm
     except ImportError:
         Warn("Must have statsmodels installed to conduct imputation",
-                category=ImportError, stacklevel=2)
+             category=ImportError, stacklevel=2)
         raise
-    indicator = ((design.vote_share > ceil).astype(int) + 
-                  (design.vote_share < floor).astype(int) * -1)
+    indicator = ((design.vote_share > ceil).astype(int) +
+                 (design.vote_share < floor).astype(int) * -1)
     design['uncontested'] = indicator
     wide = gkutil.make_designs(design,
                                years=design.year,
@@ -1237,21 +1277,22 @@ def _impute_singlepass(design, covariates, floor=.01, ceil = .99, fit_params=dic
     results.drop('vote_share__prev', axis=1, inplace=True)
     return results
 
-def _impute_recursive(design, covariates,floor=.01, ceil=.99, fit_params=dict()):
+
+def _impute_recursive(design, covariates, floor=.01, ceil=.99, fit_params=dict()):
     """
     This must iterate over each year, fit a model on that year and last 
     year (if available), and then predict that years' uncontesteds.
     Then, it must propagate these predictions forward. 
     """
     #design['vote_share__original'] = design['vote_share']
-    ## we're gonna fit models
+    # we're gonna fit models
     try:
         import statsmodels.api as sm
     except ImportError:
         Warn("Must have statsmodels installed to conduct imputation",
              category=ImportError, stacklevel=2)
         raise
-    #use the same strategy of the uncontested variate as before
+    # use the same strategy of the uncontested variate as before
     covariates += ['vote_share__prev']
     indicator = ((design.vote_share > ceil).astype(int) +
                  (design.vote_share < floor).astype(int) * -1)
@@ -1270,8 +1311,8 @@ def _impute_recursive(design, covariates,floor=.01, ceil=.99, fit_params=dict())
             last_data.drop('vote_share__prev', inplace=True, axis=1)
         assert 'vote_share__prev' not in contest.columns
         assert len(contest.columns) == len(set(contest.columns))
-        contest = contest.merge(last_data[['district_id','vote_share']],
-                                on='district_id', suffixes=('','__prev'),
+        contest = contest.merge(last_data[['district_id', 'vote_share']],
+                                on='district_id', suffixes=('', '__prev'),
                                 how='left')
         if contest.vote_share__prev.isnull().all():
             raise GIGOError('No match between two panels found in {}. Check that'
@@ -1280,8 +1321,8 @@ def _impute_recursive(design, covariates,floor=.01, ceil=.99, fit_params=dict())
                             ' and can be used to join one year worth of data '
                             ' to another'.format(yr))
         if contest.redist.all():
-            #if it's a redistricting cycle, impute like we don't have
-            #the previous years' voteshares
+            # if it's a redistricting cycle, impute like we don't have
+            # the previous years' voteshares
             contest = _impute_unc(contest, covariates=covariates[:-1],
                                   floor=floor, ceil=ceil,
                                   **fit_params)
@@ -1293,12 +1334,12 @@ def _impute_recursive(design, covariates,floor=.01, ceil=.99, fit_params=dict())
         uncontested = contest[~contest.index.isin(contested.index)]
         assert contested.shape[0] + uncontested.shape[0] == contest.shape[0]
         Xc = sm.add_constant(contested[covariates], has_constant='add')
-        model = sm.WLS(contested.vote_share, 
+        model = sm.WLS(contested.vote_share,
                        Xc, weights=contested.weight,
                        missing='drop'
                        ).fit(**fit_params)
         imputers.append(model)
-        Xunc =  sm.add_constant(uncontested[covariates],has_constant='add') 
+        Xunc = sm.add_constant(uncontested[covariates], has_constant='add')
         predictions = model.predict(Xunc)
         contest.ix[uncontested.index, 'vote_share'] = predictions
         last_data = contest.copy(deep=True)

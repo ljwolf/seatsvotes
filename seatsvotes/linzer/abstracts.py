@@ -1,5 +1,5 @@
 from . import fit as _fit, preprocessing as prep
-from .. import estimators as est
+from ..mixins import AdvantageEstimator
 from .. import utils as ut
 from sklearn import mixture as mix
 import numpy as np
@@ -7,9 +7,10 @@ import pandas as pd
 import copy
 from warnings import warn as Warn
 
-class SeatsVotes(object): # should inherit from preprocessor
-    def __init__(self, elex_frame, 
-                 holdout=None, threshold=.95, 
+
+class SeatsVotes(AdvantageEstimator):  # should inherit from preprocessor
+    def __init__(self, elex_frame,
+                 holdout=None, threshold=.95,
                  share_pattern='_share',
                  vote_col='votes',
                  turnout_col='turnout',
@@ -90,8 +91,8 @@ class SeatsVotes(object): # should inherit from preprocessor
                             `GaussianMixture().fit().ic()`.
         """
         if n_components is None:
-            n_components, _  = zip(*[_fit.optimize_degree(contrast)
-                                     for contrast in self.contrasts])
+            n_components, _ = zip(*[_fit.optimize_degree(contrast)
+                                    for contrast in self.contrasts])
         elif isinstance(n_components, int):
             n_components = [n_components] * len(self.contrasts)
         self.models = [mix.GaussianMixture(n_components=n_i, **model_kw)
@@ -116,26 +117,26 @@ class SeatsVotes(object): # should inherit from preprocessor
         if not self._has_been_fit:
             raise Exception('Model must be fit first. Call `SeatsVotes.fit`')
 
-        ### Some will be uncontested.
+        # Some will be uncontested.
         n_contested = np.random.binomial(n_samples, self._frac_contested)
         n_uncontested = n_samples - n_contested
 
         uncontesteds = self.draw_uncontesteds(n_uncontested)
 
-        ### Sample from mixture densities estimated over contests
+        # Sample from mixture densities estimated over contests
         from_each = np.random.multinomial(n_contested, self.hyperweights)
         sample = []
         for i, from_this in enumerate(from_each):
             reference = np.zeros((from_this, self.P))
             candidate = _fit.fixed_sample(self.models[i], from_this)[0]
-            candidate_votes = candidate[:,1:]
-            candidate_totals= candidate[:,0].reshape(-1,1)
+            candidate_votes = candidate[:, 1:]
+            candidate_totals = candidate[:, 0].reshape(-1, 1)
             contrasts = np.hstack((np.zeros((from_this, 1)), candidate_votes))
             if return_shares:
                 contrasts = np.exp(contrasts)
-                shares = contrasts / contrasts.sum(axis=1).reshape(-1,1)
+                shares = contrasts / contrasts.sum(axis=1).reshape(-1, 1)
             candidate_mask = np.asarray(self.patterns[i].mask)
-            reference[:,candidate_mask] += shares
+            reference[:, candidate_mask] += shares
             output = np.hstack((candidate_totals, reference))
             sample.append(output)
         contesteds = np.vstack(sample)
@@ -161,12 +162,12 @@ class SeatsVotes(object): # should inherit from preprocessor
             return
         n_of_each = np.random.multinomial(n_samples, self._uncontested_p)
         uncs = [[np.zeros(self.P,) + (k == n_of_each)]*k
-                 for k in n_of_each if k > 0]
+                for k in n_of_each if k > 0]
         out = np.vstack(uncs).astype(int)
         out = np.hstack((np.zeros((n_samples, 1)), out))
         return pd.DataFrame(out, columns=self._data.columns)
 
-    def simulate_elections(self, n_sims = 1000):
+    def simulate_elections(self, n_sims=1000):
         """
         Construct a new set of `n_elections` elections.
 
@@ -184,12 +185,12 @@ class SeatsVotes(object): # should inherit from preprocessor
         out_df = (pd.DataFrame(self.sample(self.N),
                                columns=[self._turnout_col, *self._share_cols])
                   for _ in range(n_sims))
-        out_df = (df.assign(run = i) for i,df in enumerate(out_df))
+        out_df = (df.assign(run=i) for i, df in enumerate(out_df))
         out_df = pd.concat(out_df, axis=0)
         return out_df
 
     def compute_swing_ratio(self, n_sims=1000, rule=ut.plurality_wins,
-                            percentiles=[5,95], use_sim_swing=True):
+                            percentiles=[5, 95], use_sim_swing=True):
         """
         Compute the swing ratio, or the slope of the seats-votes curve, in a small window around the observed points.
         """
@@ -200,9 +201,11 @@ class SeatsVotes(object): # should inherit from preprocessor
         observed_summary = ut.summarize_election(observed_elex)
         obs_votes, obs_party_voteshares, obs_party_seats, obs_party_seatshares = observed_summary
         swing_emp = est.swing_about_pivot(party_seatshares, party_voteshares,
-                                            obs_party_voteshares)
-        conints = est.intervals(party_seatshares, party_voteshares, percentiles=percentiles)
-        swing_lm, swing_lm_resid = est.swing_slope(party_seatshares, party_voteshares)
+                                          obs_party_voteshares)
+        conints = est.intervals(
+            party_seatshares, party_voteshares, percentiles=percentiles)
+        swing_lm, swing_lm_resid = est.swing_slope(
+            party_seatshares, party_voteshares)
 
         self._swing_ratios_sim = swing_emp
         self._swing_ratios_lm = swing_lm
@@ -245,8 +248,8 @@ class SeatsVotes(object): # should inherit from preprocessor
             self.compute_swing_ratio()
         if not hasattr(self, '_winners_bonus'):
             self._winners_bonus, extrap = est.winners_bonus(self.turnout.values,
-                                                           self.shares.values,
-                                                           self.swing_ratios)
+                                                            self.shares.values,
+                                                            self.swing_ratios)
         return self._winners_bonus
 
     @property
@@ -260,8 +263,8 @@ class SeatsVotes(object): # should inherit from preprocessor
             self.compute_swing_ratio()
         if not hasattr(self, '_pairwise_winners_bonus'):
             self._pairwise_winners_bonus, _ = est.pairwise_winners_bonus(self.turnout.values,
-                                                           self.shares.values,
-                                                           self.swing_ratios)
+                                                                         self.shares.values,
+                                                                         self.swing_ratios)
         return self._pairwise_winners_bonus
 
     @property
@@ -289,7 +292,7 @@ class SeatsVotes(object): # should inherit from preprocessor
         if not hasattr(self, 'swing_ratios'):
             self.compute_swing_ratio()
         if not hasattr(self, '_pairwise_attainment_bias'):
-            self._pairwise_attainment_bias,_ =est.pairwise_attainment_bias(self.turnout.values,
-                                                           self.shares.values,
-                                                           self.swing_ratios)
+            self._pairwise_attainment_bias, _ = est.pairwise_attainment_bias(self.turnout.values,
+                                                                             self.shares.values,
+                                                                             self.swing_ratios)
         return self._pairwise_attainment_bias

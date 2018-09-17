@@ -1,8 +1,9 @@
 import numpy as np
-from ..mixins import Preprocessor, AlwaysPredictPlotter
+from ..mixins import Preprocessor, AlwaysPredictPlotter, AdvantageEstimator
 from warnings import warn
 
-class SeatsVotes(Preprocessor, AlwaysPredictPlotter):
+
+class SeatsVotes(Preprocessor, AlwaysPredictPlotter, AdvantageEstimator):
     def __init__(self, elex_frame, covariate_columns=None,
                  weight_column=None,
                  share_column='vote_share',
@@ -19,7 +20,7 @@ class SeatsVotes(Preprocessor, AlwaysPredictPlotter):
                          uncontested=uncontested,
                          )
         self._years = np.sort(self.long.year.unique())
-    
+
     @property
     def years(self):
         return self._years
@@ -62,7 +63,7 @@ class SeatsVotes(Preprocessor, AlwaysPredictPlotter):
                             "mean to the target value.")
         t = list(self.years).index(year) if year is not None else t
         this_year = self.wide[t]
-        party_voteshares = np.average(this_year.vote_share, 
+        party_voteshares = np.average(this_year.vote_share,
                                       weights=this_year.weight)
         if predict is False:
             self._GIGO("Prediction must be true if using bootstrap")
@@ -78,7 +79,7 @@ class SeatsVotes(Preprocessor, AlwaysPredictPlotter):
         pweights = (this_year.weight / this_year.weight.sum()).values
         pweights = pweights[~obs_swings.isnull().values]
         pweights /= pweights.sum()
-        sim_swings = np.random.choice(obs_swings.dropna() + swing, (n_sims, n_dists), 
+        sim_swings = np.random.choice(obs_swings.dropna() + swing, (n_sims, n_dists),
                                       replace=True, p=pweights)
-        sim_h = target_h.values[None,:] + sim_swings
+        sim_h = target_h.values[None, :] + sim_swings
         return sim_h
