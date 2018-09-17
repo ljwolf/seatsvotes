@@ -1,7 +1,8 @@
 import numpy as np
 from ..mixins import Preprocessor, AlwaysPredictPlotter
 
-class SeatsVotes(Preprocessor, AlwaysPredictPlotter):
+
+class Reswing(Preprocessor, AlwaysPredictPlotter):
     def __init__(self, elex_frame, covariate_columns=None,
                  weight_column=None,
                  share_column='vote_share',
@@ -27,13 +28,13 @@ class SeatsVotes(Preprocessor, AlwaysPredictPlotter):
                 self.wide[i]['swing'] = np.nan
             self._swing_mean += [self.wide[i]['swing'].mean()]
             self._swing_dev += [self.wide[i]['swing'].std()]
-    
+
     @property
     def years(self):
         return self._years
 
     def simulate_elections(self, n_sims=10000,
-                           t=-1, year=None, predict=True, 
+                           t=-1, year=None, predict=True,
                            swing=0, target_v=None, fix=False):
         """
         Simulate elections according to a bootstrap technique. 
@@ -56,13 +57,14 @@ class SeatsVotes(Preprocessor, AlwaysPredictPlotter):
                     flag denoting whether to use the predictive distribution (i.e. add bootstrapped swings to 
                     the voteshare in the previous year) or the counterfactual distribution (i.e. add bootstrapped
                     swings to the voteshare in the current year).
-        
+
         Returns
         ---------
         an (n_sims, n_districts) matrix of simulated vote shares. 
         """
         if fix:
-            raise Exception("Bootstrapped elections cannot be fixed in mean to the target value.")
+            raise Exception(
+                "Bootstrapped elections cannot be fixed in mean to the target value.")
         t = list(self.years).index(year) if year is not None else t
         turnout, _, party_voteshares, *rest = self._extract_election(year=year)
         this_year = self.wide[t]
@@ -70,10 +72,11 @@ class SeatsVotes(Preprocessor, AlwaysPredictPlotter):
         if swing is not None and target_v is not None:
             raise ValueError("either swing or target_v, not both.")
         elif target_v is not None:
-            swing = (target_v - party_voteshares[0]) 
+            swing = (target_v - party_voteshares[0])
         turnout, _, party_voteshares, *rest = self._extract_election(year=year)
         target_h = this_year.vote_share__prev if predict else this_year.vote_share
         n_dists = len(target_h)
-        sim_swings = np.random.normal(mean + swing, dev, size=(n_sims, n_dists))
-        sim_h = target_h.values[None,:] + sim_swings
+        sim_swings = np.random.normal(
+            mean + swing, dev, size=(n_sims, n_dists))
+        sim_h = target_h.values[None, :] + sim_swings
         return sim_h
