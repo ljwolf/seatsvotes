@@ -52,7 +52,7 @@ def _load_geodata(state=None):
         path = _fetch_geodata_from_osf()
     full = geopandas.read_file('tar://' + path)
     if state is not None:
-        return full.query('state_name == {}'.format(state.lower()))
+        return full.query('state_name == "{}"'.format(state.lower()))
     return full
 
 
