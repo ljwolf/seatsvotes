@@ -12,21 +12,33 @@ class GaussianMixture(AdvantageEstimator):  # should inherit from preprocessor
     def __init__(self, elex_frame,
                  holdout=None, threshold=.95,
                  share_pattern='_share',
-                 vote_col='votes',
                  turnout_col='turnout',
                  year_col='year',
-                 **kws):
+                 ):
         """
         Construct a Seats-Votes object for a given election.
 
         Arguments
         ---------
         data        :   dataframe
-        votecols    :   list of strings
-        holdout     :   string
-        kws         :   dict of keyword arguments
+                        dataframe containing the elections to be analyzed
+        holdout     :   string (default: first non-turnout column matching `share_pattern`)
+                        party name to consider as the `holdout` party, against which
+                        all log contrasts are constructed
+        threshold   :   float (default: 95)
+                        threshold beyond which all elections are considered uncontested.
+        share_pattern:  string (default: `_share`)
+                        pattern denoting how all the vote share column in the dataframe
+                        are named. By default, all columns with `_share` in their name
+                        are matched using dataframe.filter(like=share_pattern)
+        turnout_col :   string
+                        name of column containing turnout information
+
         """
         share_frame = elex_frame.filter(like=share_pattern)
+        if share_frame.empty:
+            raise KeyError("no columns in the input dataframe "
+                           "were found that match pattern: {}".format(share_pattern))
         turnout = elex_frame.get(turnout_col)
         if threshold < .5:
             Warn('Threshold is an upper, not lower bound. Converting to upper bound.')
@@ -38,7 +50,6 @@ class GaussianMixture(AdvantageEstimator):  # should inherit from preprocessor
         else:
             self._holdout_idx = list(elex_frame.columns).index(holdout)
         self._data = elex_frame
-        self._vote_col = 'votes'
         self._share_cols = share_frame.columns.tolist()
         self._turnout_col = turnout_col
         self.turnout = turnout

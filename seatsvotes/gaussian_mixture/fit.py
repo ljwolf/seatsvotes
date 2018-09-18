@@ -1,7 +1,7 @@
 from sklearn import mixture as mx
 from sklearn.utils import check_random_state
 import numpy as np
-import warnings as warn
+from warnings import warn 
 
 def optimize_degree(data, max_degree = 10, ic='bic', ic_kw=None,
                     mix_kw=None, fit_kw=None):
