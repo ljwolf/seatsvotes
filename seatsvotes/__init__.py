@@ -5,3 +5,4 @@ from .reswing.abstracts import Reswing
 from .panel.abstracts import Panel
 from .ecdf import Empirical_CDF as Empirical
 from . import data
+from . import plot
