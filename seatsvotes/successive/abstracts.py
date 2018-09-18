@@ -122,7 +122,7 @@ class Successive(Preprocessor, Plotter, AdvantageEstimator):
         candidate.index = self.years.tolist()
         return candidate
 
-    def simulate_elections(self, n_sims=10000, swing=None, Xhyp=None,
+    def simulate_elections(self, n_sims=1000, swing=None, Xhyp=None,
                            target_v=None, fix=False, t=-1, year=None,
                            predict=False):
         """
@@ -177,7 +177,7 @@ class Successive(Preprocessor, Plotter, AdvantageEstimator):
             sims = sims + (target_v - sim_means)
         return np.clip(sims, 0, 1)
 
-    def predict(self, n_sims=10000, Xhyp=None):
+    def predict(self, n_sims=1000, Xhyp=None):
         """
         Generic method to either compute predictive or counterfactual elections.
 

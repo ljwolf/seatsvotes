@@ -45,21 +45,30 @@ class Panel(Preprocessor, AlwaysPredictPlotter):
                 grouped_vs = wide.groupby(
                     group_by).vote_share.mean().to_frame()
                 grouped_vs.columns = ['grouped_vs']
+                grouped_vs = grouped_vs.fillna(.5)
                 self.wide[i] = wide.merge(
                     grouped_vs, left_on=group_by, right_index=True)
+                self.wide[i]['grouped_vs'] = self.wide[i]['grouped_vs'].fillna(
+                    .5)
             else:
                 grouped_vs = wide.vote_share.mean()
                 self.wide[i]['grouped_vs'] = grouped_vs
             self.decades[_year_to_decade(yr)].append(self.wide[i])
         self.models = []
+
         for yr in self._decade_starts:
-            self.decades[yr] = pd.concat(self.decades[yr], axis=0)
+            self.decades[yr] = pd.concat(self.decades[yr], axis=0, sort=True)
 
             # WLS Yields incredibly precise simulation values? Not sure why.
-            self.models.append(sm.GLS(self.decades[yr].vote_share,
-                                      sm.add_constant(
-                                          self.decades[yr][self._covariate_cols]),
-                                      sigma=1/self.decades[yr].weight).fit())
+            X = sm.add_constant(self.decades[yr][self._covariate_cols]).values
+            Y = self.decades[yr].vote_share.values
+            Y[np.isnan(Y)] = self.decades[yr]['grouped_vs'].values[np.isnan(Y)]
+            if weight_column is None:
+                weights = None
+                self.models.append(sm.GLS(Y, X).fit())
+            else:
+                weights = self.decades[yr].weight
+                self.models.append(sm.GLS(Y, X, sigma=weights).fit())
 
     @property
     def years(self):
@@ -74,7 +83,7 @@ class Panel(Preprocessor, AlwaysPredictPlotter):
         unite.columns = self.years
         return unite
 
-    def simulate_elections(self, n_sims=10000, t=-1, year=None,
+    def simulate_elections(self, n_sims=1000, t=-1, year=None,
                            target_v=None, swing=0., fix=False, predict=True):
         if year is None:
             year = list(self.years)[t]

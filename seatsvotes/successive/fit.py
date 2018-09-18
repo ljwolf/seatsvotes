@@ -11,7 +11,7 @@ def models(designs, share_col, covariate_cols, weight_col=None):
 
 def _model(design, share_col, covariate_cols, weight_col=None):
     if weight_col is not None:
-        weights = 1.0 / design[weight_col].values
+        weights = 1.0 / design[weight_col].values**2
     else:
         weights = 1
     last_years = share_col + '__prev'
