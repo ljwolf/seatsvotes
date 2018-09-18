@@ -1,5 +1,5 @@
 import numpy as np
-from .. import utils
+from ..utils import plurality_wins, majority_wins, chol_mvn
 import pandas as pd
 from warnings import warn
 import statsmodels.api as sm

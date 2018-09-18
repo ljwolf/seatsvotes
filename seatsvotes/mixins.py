@@ -1,6 +1,6 @@
 from warnings import warn as Warn
 from collections import OrderedDict
-from .gelmanking import utils as gkutil
+from . import utils
 import numpy as np
 import copy
 import pandas as pd
@@ -201,7 +201,7 @@ class Preprocessor(object):
             if uncontested['method'].lower() != 'drop':
                 self._covariate_cols.extend(dummies.columns.tolist())
 
-        self.wide = gkutil.make_designs(self.elex_frame,
+        self.wide = utils.make_designs(self.elex_frame,
                                         years=self.elex_frame.year,
                                         redistrict=self.elex_frame.get(
                                             'redistrict'),
@@ -302,7 +302,7 @@ class Preprocessor(object):
                 # to do the stronger imputation, you need to get the redistricting vector
                 if self.elex_frame.get('redistrict') is None:
                     Warn('computing redistricting from years vector')
-                    self.elex_frame['redist'] = gkutil.census_redistricting(
+                    self.elex_frame['redist'] = utils.census_redistricting(
                         pd.Series(self.elex_frame.year))
         elif method.lower() == 'ignore':
             floor, ceil = .05, .95
@@ -1253,7 +1253,7 @@ def _impute_singlepass(design, covariates, floor=.01, ceil=.99, fit_params=dict(
     indicator = ((design.vote_share > ceil).astype(int) +
                  (design.vote_share < floor).astype(int) * -1)
     design['uncontested'] = indicator
-    wide = gkutil.make_designs(design,
+    wide = utils.make_designs(design,
                                years=design.year,
                                redistrict=design.get('redistrict'),
                                district_id='district_id')
