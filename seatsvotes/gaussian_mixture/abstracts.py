@@ -161,10 +161,19 @@ class GaussianMixture(AdvantageEstimator):  # should inherit from preprocessor
         if n_samples == 0:
             return
         n_of_each = np.random.multinomial(n_samples, self._uncontested_p)
+        turnout = []
+        for i,ni in enumerate(n_of_each):
+            colname = self.uncontested.columns[i+1]
+            this_turnout = self.uncontested.query('{} >= {}'.format(colname, 
+                                                               self._uncontested_threshold))\
+                                      .turnout.sample(ni, replace=True).values
+            turnout.extend(this_turnout)
+        turnout = np.asarray(turnout).reshape(-1,1)
+
         uncs = [[np.zeros(self.P,) + (k == n_of_each)]*k
                 for k in n_of_each if k > 0]
         out = np.vstack(uncs).astype(int)
-        out = np.hstack((np.zeros((n_samples, 1)), out))
+        out = np.hstack((turnout, out))
         return pd.DataFrame(out, columns=self._data.columns)
 
     def simulate_elections(self, n_sims=1000):
