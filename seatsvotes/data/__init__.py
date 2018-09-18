@@ -11,6 +11,7 @@ def illinois():
     import geopandas as gpd
     return gpd.read_file('tar://' + os.path.join(self_dir, 'illinois.zip'))
 
+
 def congress(state=None, geo=False, overwrite_cache=False):
     """Elections to the house from ICPSR 6311
 
@@ -37,13 +38,15 @@ def congress(state=None, geo=False, overwrite_cache=False):
     else:
         _maybe_fetch_geodata_from_osf(overwrite_cache=overwrite_cache)
         return _load_geodata(state=state)
-            
+
+
 def _load_geodata(state=None):
     """ load the geodata from file, possibly filtering by a state"""
     try:
         import geopandas
     except ImportError:
-        raise ImportError("package `geopandas` is required to use spatial data examples")
+        raise ImportError(
+            "package `geopandas` is required to use spatial data examples")
     path = os.path.join(self_dir, 'wolf_2018_scidata-osf-vf9pf.tar.gz')
     if not os.path.exists(path):
         path = _fetch_geodata_from_osf()
@@ -51,7 +54,8 @@ def _load_geodata(state=None):
     if state is not None:
         return full.query('state_name == {}'.format(state.lower()))
     return full
-    
+
+
 def _maybe_fetch_geodata_from_osf(overwrite_cache=False):
     """ load the geodata from the open science framework, possibly overwriting
     the version cached on the hard drive
@@ -78,7 +82,8 @@ def _maybe_fetch_geodata_from_osf(overwrite_cache=False):
     logging.info('download from OSF successful.')
     return fh
 
-def icspr6311(state=None):
+
+def icpsr6311(state=None):
     """ pull elections data from ICPSR6311, grabbed from judgeitII R package"""
     import pandas as pd
     house6311 = pd.read_csv(os.path.join(self_dir, 'judgeit/house6311.csv'))
@@ -87,6 +92,7 @@ def icspr6311(state=None):
     if state is not None:
         return house6311.query('state == {}'.format(state.lower()))
     return house6311
+
 
 def president(year=2012):
     """ Elections to the presidency by congressional district, from judgeitII R package"""
@@ -123,7 +129,8 @@ def canada():
     """ Canadian parliamentary elections in 1979, from Linzer (2012)"""
     import pandas as pd
     out = pd.read_csv(os.path.join(self_dir, 'canada1979.csv'))
-    out.columns = ['name', 'turnout', 'liberal',
-                   'progcons', 'ndp', 'socialcredit']
+    out.columns = ['name', 'turnout', 'liberal_share',
+                   'progcons_share', 'ndp_share', 'socialcredit_share']
+    out['year'] = 1979
     out.index = out.name
     return out
