@@ -206,7 +206,7 @@ class Preprocessor(object):
                                         redistrict=self.elex_frame.get(
                                             'redistrict'),
                                         district_id='district_id')
-        self.long = pd.concat(self.wide, axis=0)
+        self.long = pd.concat(self.wide, axis=0, sort=True)
 
     @staticmethod
     def _impute_turnout_from_voteshare_and_state(df, turnout_col='turnout',
