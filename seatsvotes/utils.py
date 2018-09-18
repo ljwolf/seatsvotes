@@ -25,7 +25,7 @@ def make_designs(elex_frame, years=None, redistrict=None, district_id = 'distric
     if years is None:
         years = elex_frame['year']
     if redistrict is None:
-        Warn('computing redistricting from years vector')
+        warn('computing redistricting from years vector')
         redistrict = census_redistricting(pd.Series(years))
     if district_id not in elex_frame.columns:
         raise KeyError("district_id provided ({}) not found in dataframe".format(district_id))
@@ -114,7 +114,7 @@ def check_psd(var, regularize=False):
     elif regularize:
         first_negative = (eigs < 0).tolist().index(True)
         var += np.eye(var.shape[0]) * eigs[first_negative]
-        Warn('Had to add {} to the covariance diagonal to make it PSD.'
+        warn('Had to add {} to the covariance diagonal to make it PSD.'
              ' If this value is large, there is probably something substantively '
              ' wrong with your covariance matrix. '.format(eigs[first_negative]))
     return False, var
