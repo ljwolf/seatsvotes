@@ -33,7 +33,7 @@ class Reswing(Preprocessor, AlwaysPredictPlotter):
     def years(self):
         return self._years
 
-    def simulate_elections(self, n_sims=10000,
+    def simulate_elections(self, n_sims=1000,
                            t=-1, year=None, predict=True,
                            swing=0, target_v=None, fix=False):
         """
@@ -80,3 +80,6 @@ class Reswing(Preprocessor, AlwaysPredictPlotter):
             mean + swing, dev, size=(n_sims, n_dists))
         sim_h = target_h.values[None, :] + sim_swings
         return sim_h
+
+    def _extract_election(self, *args, **kwargs):
+        return self._extract_data(*args, **kwargs)
