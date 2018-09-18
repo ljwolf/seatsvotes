@@ -2,66 +2,10 @@ import numpy as np
 from warnings import warn
 import pandas as pd
 
-def make_designs(elex_frame, years=None, redistrict=None, district_id = 'district_id'):
-    """
-    Construct a sequence of pair-election design matrices from a long-format timeseries. 
-    Let there be ni observations over T time period, for a total of N = \sum_t^T n_t 
-    observations, where not all ni are equal. 
+#############################
+# Generic Utilities         #
+#############################
 
-    Arguments
-    ----------
-    elex_frame: dataframe
-                a dataframe containing the results of an election.
-    years     : np.ndarray
-                an N x 1 array containing the years of each record. 
-    redistrict: np.ndarray
-                an N x 1 array containing the years of each record.
-    district_id: string
-                 the name of the column in the dataframe to link geometries between congresses. 
-                 Typically, this should be a "stateFIPS"+"district#", and redistricting 
-                 information in `redistrict` governs when this is considered "continuous" 
-                 vs. "discontinuous."
-    """
-    if years is None:
-        years = elex_frame['year']
-    if redistrict is None:
-        warn('computing redistricting from years vector')
-        redistrict = census_redistricting(pd.Series(years))
-    if district_id not in elex_frame.columns:
-        raise KeyError("district_id provided ({}) not found in dataframe".format(district_id))
-
-    working = elex_frame.copy()
-    working['year'] = years
-    working['redist'] = redistrict
-
-    grouper = working.groupby('year')
-    iterator = iter(grouper)
-
-    out = []
-    _, last_year = next(iterator)
-    if district_id is None:
-        last_year['district_id'] = np.arange(0, last_year.shape[0])
-    else:
-        last_year.rename(columns={district_id:'district_id'}, inplace=True)
-    first_out = last_year.copy()
-    out.append(first_out)
-    for i, this_year in iterator:
-        if district_id is None:
-            this_year['district_id'] = np.arange(0,this_year.shape[0])
-        else:
-            this_year.rename(columns={district_id:'district_id'}, inplace=True)
-        both_frames = pd.merge(this_year,
-                               last_year[['district_id', 'vote_share']],
-                               on='district_id', how='left',
-                               suffixes=('', '__prev'))
-        if (both_frames.redist == 1).all():
-            both_frames.drop('vote_share__prev', axis=1, inplace=True)
-        out.append(both_frames)
-        last_year = this_year
-    return out
-
-def census_redistricting(years):
-    return pd.Series(years).apply(lambda x: x % 10 == 2).apply(int)
 
 def chol_mvn(Mu, Sigma):
     """
@@ -88,14 +32,15 @@ def chol_mvn(Mu, Sigma):
     described by MVN(Mu, Sigma)
     """
     try:
-        D = scla.cholesky(Sigma, overwrite_a = True)
-        e = np.random.normal(0,1,size=Mu.shape)
+        D = scla.cholesky(Sigma, overwrite_a=True)
+        e = np.random.normal(0, 1, size=Mu.shape)
         kernel = np.dot(D.T, e)
         out = Mu + kernel
     except np.linalg.LinAlgError:
         out = np.random.multivariate_normal(Mu.flatten(), Sigma)
         out = out.reshape(Mu.shape)
     return out
+
 
 def check_psd(var, regularize=False):
     """
@@ -119,9 +64,17 @@ def check_psd(var, regularize=False):
              ' wrong with your covariance matrix. '.format(eigs[first_negative]))
     return False, var
 
+
+try:
+    from tqdm import tqdm
+except ImportError:
+    def tqdm(first, *args, **kwargs):
+        return first
+
 #############################
 # Win Rules                 #
 #############################
+
 
 def plurality_wins(votes):
     """
@@ -137,6 +90,7 @@ def plurality_wins(votes):
     """
     wins = np.argmax(votes, axis=1)
     return wins
+
 
 def majority_wins(votes):
     """
@@ -160,3 +114,73 @@ def majority_wins(votes):
 #############################
 # Working with Voting Data  #
 #############################
+
+
+def make_designs(elex_frame, years=None,
+                 redistrict=None, district_id='district_id'):
+    """
+    Construct a sequence of pair-election design matrices from a long-format timeseries. 
+    Let there be ni observations over T time period, for a total of N = \sum_t^T n_t 
+    observations, where not all ni are equal. 
+
+    Arguments
+    ----------
+    elex_frame: dataframe
+                a dataframe containing the results of an election.
+    years     : np.ndarray
+                an N x 1 array containing the years of each record. 
+    redistrict: np.ndarray
+                an N x 1 array containing the years of each record.
+    district_id: string
+                 the name of the column in the dataframe to link geometries between congresses. 
+                 Typically, this should be a "stateFIPS"+"district#", and redistricting 
+                 information in `redistrict` governs when this is considered "continuous" 
+                 vs. "discontinuous."
+    """
+    if years is None:
+        years = elex_frame['year']
+    if redistrict is None:
+        warn('computing redistricting from years vector')
+        redistrict = census_redistricting(pd.Series(years))
+    if district_id not in elex_frame.columns:
+        raise KeyError(
+            "district_id provided ({}) not found in dataframe".format(district_id))
+
+    working = elex_frame.copy()
+    working['year'] = years
+    working['redist'] = redistrict
+
+    grouper = working.groupby('year')
+    iterator = iter(grouper)
+
+    out = []
+    _, last_year = next(iterator)
+    if district_id is None:
+        last_year['district_id'] = np.arange(0, last_year.shape[0])
+    else:
+        last_year.rename(columns={district_id: 'district_id'}, inplace=True)
+    first_out = last_year.copy()
+    out.append(first_out)
+    for i, this_year in iterator:
+        if district_id is None:
+            this_year['district_id'] = np.arange(0, this_year.shape[0])
+        else:
+            this_year.rename(
+                columns={district_id: 'district_id'}, inplace=True)
+        both_frames = pd.merge(this_year,
+                               last_year[['district_id', 'vote_share']],
+                               on='district_id', how='left',
+                               suffixes=('', '__prev'))
+        if (both_frames.redist == 1).all():
+            both_frames.drop('vote_share__prev', axis=1, inplace=True)
+        elif (both_frames.redist == 1).any():
+            previous = both_frames.vote_share__prev.values
+            previous[both_frames.redist == 1] = np.nan
+            both_frames['vote_share__prev'] = previous
+        out.append(both_frames)
+        last_year = this_year
+    return out
+
+
+def census_redistricting(years):
+    return pd.Series(years).apply(lambda x: x % 10 == 2).apply(int)
