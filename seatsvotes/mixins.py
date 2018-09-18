@@ -113,6 +113,7 @@ class Preprocessor(object):
                               censor  :   clip the data to a given vote share
                               winsor  :   clip the data to a given percentage
                               drop    :   drop uncontested elections
+                              ignore  :   do nothing about uncontested elections.
                               impute  :   impute vote shares from the available data in each year
                                           on other vote shares
                               impute_recursive: impute vote shares from available data in each year
@@ -202,10 +203,10 @@ class Preprocessor(object):
                 self._covariate_cols.extend(dummies.columns.tolist())
 
         self.wide = utils.make_designs(self.elex_frame,
-                                        years=self.elex_frame.year,
-                                        redistrict=self.elex_frame.get(
-                                            'redistrict'),
-                                        district_id='district_id')
+                                       years=self.elex_frame.year,
+                                       redistrict=self.elex_frame.get(
+                                           'redistrict'),
+                                       district_id='district_id')
         self.long = pd.concat(self.wide, axis=0, sort=True)
 
     @staticmethod
@@ -277,9 +278,9 @@ class Preprocessor(object):
         """
         if method.lower() == 'singlepass':
             method = 'impute_singlepass'
-        if method.lower() == 'recursive':
+        elif method.lower() == 'recursive':
             method = 'impute_recursive'
-        if (method.lower().startswith('winsor') or
+        elif (method.lower().startswith('winsor') or
                 method.lower().startswith('censor')):
             floor, ceil = .1, .9
         elif (method.lower() in ('shift', 'drop')):
@@ -313,7 +314,7 @@ class Preprocessor(object):
             raise KeyError("Uncontested method not understood."
                            "Recieved: {}"
                            "Supported: 'censor', 'winsor', "
-                           "'shift', 'drop', 'impute',"
+                           "'shift', 'drop', 'impute', 'ignore',"
                            " 'impute_recursive', 'impute_singlepass',"
                            "'singlepass'".format(method))
         # if self.elex_frame.vote_share.isnull().any():
@@ -1254,9 +1255,9 @@ def _impute_singlepass(design, covariates, floor=.01, ceil=.99, fit_params=dict(
                  (design.vote_share < floor).astype(int) * -1)
     design['uncontested'] = indicator
     wide = utils.make_designs(design,
-                               years=design.year,
-                               redistrict=design.get('redistrict'),
-                               district_id='district_id')
+                              years=design.year,
+                              redistrict=design.get('redistrict'),
+                              district_id='district_id')
     results = []
     for i, elex in enumerate(wide):
         uncontested = elex.query('vote_share in (0,1)')
