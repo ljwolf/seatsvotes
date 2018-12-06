@@ -449,7 +449,7 @@ class Plotter(object):
         if normalize:
             ranks = ranks / len(ranks)
         if mean_center:
-            plotshares = (1 - vshares) + (pvshares[0] - .5)
+            plotshares = np.clip((1 - vshares) + (vshares.mean() - .5),0,1)
         else:
             plotshares = 1 - vshares
         ax.scatter(plotshares, ranks, **scatter_kw)
