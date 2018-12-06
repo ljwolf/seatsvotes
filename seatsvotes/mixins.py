@@ -562,7 +562,7 @@ class Plotter(object):
                                  (1-lo)+shift, (1-hi)+shift, **env_kw)
             else:
                 ax.plot((1-lo)+shift, np.arange(1, N+1)/rescale, **env_kw)
-                ax.plot((1-med)+shift, np.arange(1, N+1)/rescale, **median_kw)
+                ax.plot((1-hi)+shift, np.arange(1, N+1)/rescale, **median_kw)
             ax.plot((1-med)+shift, np.arange(1, N+1)/rescale, **median_kw)
         if return_sims:
             return f, ax, sims, ranks
