@@ -137,7 +137,7 @@ class Preprocessor(object):
             self._GIGO = _raiseGIGO
         else:
             self._GIGO = lambda x: Warn(x, category=GIGOError, stacklevel=2)
-        self.elex_frame = frame.copy(deep=True)
+        self.elex_frame = frame.copy()
         if covariates is None:
             self._covariate_cols = []
         else:
