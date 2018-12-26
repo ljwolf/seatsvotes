@@ -512,7 +512,8 @@ class Plotter(object):
             t = list(self.years).index(year)
         sims = self.simulate_elections(t=t, year=year, n_sims=n_sims, swing=swing,
                                        target_v=target_v, fix=False, predict=predict)
-        ranks = [rankdata(1-sim, method='max').astype(float) for sim in sims]
+        ranks = np.vstack([rankdata(1-sim, method='max').astype(float) 
+                           for sim in sims])
         N = len(sims[0])
 
         if ax is None:
@@ -534,14 +535,19 @@ class Plotter(object):
             scatter_kw['color'] = scatter_kw.get('color', 'k')
             scatter_kw['linewidth'] = scatter_kw.get('linewidth', 0)
             scatter_kw['marker'] = scatter_kw.get('marker', 'o')
-            tally = OrderedDict()
-            tally.update({i: [] for i in range(1, N+1)})
-            for sim, rank in zip(sims, ranks):
-                for hi, ri in zip(sim, rank):
-                    tally[ri].append(hi)
-            ptiles = OrderedDict(
-                [(i, np.percentile(tally[i], q=q)) for i in tally.keys()])
-            lo, med, hi = np.vstack(ptiles.values()).T
+            ptiles = []
+            for ri in range(1,N+1):
+                win_by_rank = np.hstack([sim[np.where(rank==ri)]
+                                         for sim,rank in zip(sims,ranks)])
+                ptile = np.nanpercentile(win_by_rank, q=q, keepdims=True).flatten()
+                if np.isnan(ptile).all(): # when win_by_rank is empty, ptile is numpy.nan
+                    ptile = [np.nan] * len(q) # so it needs to match the size of q
+                if len(q) == 2:
+                    lo,hi = ptile
+                    med = np.nanmedian(win_by_rank)
+                    ptile = [lo, med, hi]
+                ptiles.append(ptile)
+            lo, med, hi = np.vstack(ptiles).T
         else:
             # suggest these otherwise, if user doesn't provide alternatives
             scatter_kw['alpha'] = scatter_kw.get('alpha', .2)
@@ -549,7 +555,8 @@ class Plotter(object):
             scatter_kw['linewidth'] = scatter_kw.get('linewidth', 0)
             scatter_kw['marker'] = scatter_kw.get('marker', 'o')
         for sim, rank in zip(sims, ranks):
-            ax.scatter((1-sim)+shift, rank/rescale, **scatter_kw)
+            ax.scatter(np.clip((1-sim)+shift,0,1), 
+                       rank/rescale, **scatter_kw)
         if silhouette:
             env_kw['linestyle'] = env_kw.get('linestyle', '-')
             env_kw['color'] = env_kw.get('color', '#FD0E35')
@@ -559,10 +566,13 @@ class Plotter(object):
             if band:
                 env_kw['alpha'] = .4
                 ax.fill_betweenx(np.arange(1, N+1)/rescale,
-                                 (1-lo)+shift, (1-hi)+shift, **env_kw)
+                                 np.clip((1-lo)+shift,0,1), 
+                                 np.clip((1-hi)+shift,0,1), **env_kw)
             else:
-                ax.plot((1-lo)+shift, np.arange(1, N+1)/rescale, **env_kw)
-                ax.plot((1-hi)+shift, np.arange(1, N+1)/rescale, **median_kw)
+                ax.plot(np.clip((1-lo)+shift,0,1), 
+                        np.arange(1, N+1)/rescale, **env_kw)
+                ax.plot(np.clip((1-hi)+shift,0,1), 
+                        np.arange(1, N+1)/rescale, **median_kw)
             ax.plot((1-med)+shift, np.arange(1, N+1)/rescale, **median_kw)
         if return_sims:
             return f, ax, sims, ranks
