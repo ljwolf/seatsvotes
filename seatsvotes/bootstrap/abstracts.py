@@ -27,7 +27,7 @@ class Bootstrap(Preprocessor, AlwaysPredictPlotter, AdvantageEstimator):
         return self._years
 
     def simulate_elections(self, n_sims=1000, predict=True,
-                           t=-1, year=None, swing=0, target_v=None, fix=False):
+                           t=-1, year=None, swing=0, target_v=None, fix=False, replace=True):
         """
         Simulate elections according to a bootstrap technique. 
 
@@ -55,6 +55,16 @@ class Bootstrap(Preprocessor, AlwaysPredictPlotter, AdvantageEstimator):
                     the voteshare in the previous year) or the counterfactual 
                     distribution (i.e. add bootstrapped
                     swings to the voteshare in the current year).
+        fix     :   bool
+                    flag denoting whether to force the average district vote to be
+                    target_v exactly. If True, all elections will have exactly target_v
+                    mean district vote share. If False, all elections will have approximately
+                    target_v mean district vote share, with the grand mean vote share being target_v
+        replace :   bool
+                    flag denoting whether to resample swings with replacement or without replacement. 
+                    If the sampling occurs without replacement, then each swing is used exactly one time in a simulation.
+                    If the sampling occurs with replacement, then each swing can be used more than one
+                    time in a simulation, and some swings may not be used in a simulation.
         Returns
         ---------
         an (n_sims, n_districts) matrix of simulated vote shares. 
@@ -81,6 +91,6 @@ class Bootstrap(Preprocessor, AlwaysPredictPlotter, AdvantageEstimator):
         pweights = (this_year.weight / this_year.weight.sum()).values.flatten()
         pweights /= pweights.sum()
         sim_swings = np.random.choice(obs_swings + swing, (n_sims, n_dists),
-                                      replace=True, p=pweights)
+                                      replace=replace, p=pweights)
         sim_h = target_h[None, :] + sim_swings
         return np.clip(sim_h, 0, 1)
