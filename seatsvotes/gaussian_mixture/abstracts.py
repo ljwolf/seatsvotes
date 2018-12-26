@@ -1,5 +1,5 @@
 from . import fit as _fit, preprocessing as prep
-from ..mixins import AdvantageEstimator
+from ..mixins import AdvantageEstimator, Plotter
 from .. import utils as ut
 from sklearn import mixture as mix
 import numpy as np
@@ -69,7 +69,8 @@ class GaussianMixture(AdvantageEstimator):  # should inherit from preprocessor
         n_contested = 0
         for pattern in self.patterns:
             contrast = prep.make_log_contrasts(pattern.contests,
-                                               holdout=holdout)
+                                               holdout=holdout,
+                                               votecols = self._share_cols + ['turnout'])
             contrasts.append(contrast)
             hyperweights.append(contrast.shape[0] / self.N)
             n_contested += contrast.shape[0]
@@ -187,7 +188,7 @@ class GaussianMixture(AdvantageEstimator):  # should inherit from preprocessor
         out = np.hstack((turnout, out))
         return pd.DataFrame(out, columns=self._data.columns)
 
-    def simulate_elections(self, n_sims=1000):
+    def simulate_elections(self, n_sims=1000, **kw):
         """
         Construct a new set of `n_elections` elections.
 
