@@ -1,4 +1,5 @@
 import numpy as np
+from scipy import stats
 from ..mixins import Preprocessor, AlwaysPredictPlotter
 
 
@@ -68,7 +69,7 @@ class Reswing(Preprocessor, AlwaysPredictPlotter):
         t = list(self.years).index(year) if year is not None else t
         turnout, _, party_voteshares, *rest = self._extract_election(year=year)
         this_year = self.wide[t]
-        mean, dev = self._swing_mean[t], self._swing_dev[t]
+        _swing = self.wide[t].swing
         if swing is not None and target_v is not None:
             raise ValueError("either swing or target_v, not both.")
         elif target_v is not None:
@@ -76,9 +77,9 @@ class Reswing(Preprocessor, AlwaysPredictPlotter):
         turnout, _, party_voteshares, *rest = self._extract_election(year=year)
         target_h = this_year.vote_share__prev if predict else this_year.vote_share
         n_dists = len(target_h)
-        sim_swings = np.random.normal(
-            mean + swing, dev, size=(n_sims, n_dists))
-        sim_h = target_h.values[None, :] + sim_swings
+        kde = stats.gaussian_kde(_swing)
+        sim_swings = kde.resample(n_sims * n_dists).reshape(n_sims, n_dists)
+        sim_h = np.clip(target_h.values[None, :] + sim_swings + swing, 0,1)
         return sim_h
 
     def _extract_election(self, *args, **kwargs):
